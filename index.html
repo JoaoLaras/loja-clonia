@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação para apresentar os acentos corretamente. -->
+    <meta charset="UTF-8">
+
+    <!-- Ajusta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Texto apresentado na aba do navegador. -->
+    <title>Loja Clonia</title>
+</head>
+<body>
+    <h1>Loja Clonia</h1>
+
+            <!-- Um link envia uma requisição GET para a rota /produtos. -->
+            <p>
+                <a href="/produtos">Consultar todos os produtos</a>
+            </p>
+
+            <h2>Consultar produto</h2>
+
+            <!-- GET envia o código pela URL para consultar um produto. -->
+            <form action="/buscar" method="GET">
+                
+                <label for="codigo">Código do produto:</label>
+                <input id="codigo" name="codigo" type="text">
+
+                <button type="submit">Pesquisar</button>
+            </form>
+
+            <hr>
+
+            <h2>Cadastrar produto</h2>
+
+            <!-- POST envia os campos no corpo da requisição. -->
+            <form action="/cadastrar" method="POST">
+                <p>
+                    <label for="modelo">Modelo:</label>
+                    <input id="modelo" name="modelo" type="text">
+                </p>
+
+                <p>
+                    <label for="tamanho">Tamanho:</label>
+                    <input id="tamanho" name="tamanho" type="text">
+                </p>
+
+                <p>
+                    <label for="cor">Cor:</label>
+                    <input id="cor" name="cor" type="text">
+                </p>
+
+                <button type="submit">Cadastrar</button>
+            </form>
+</body>
+</html>

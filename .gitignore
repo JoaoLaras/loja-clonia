@@ -1,0 +1,12 @@
+﻿# Pacotes instalados.
+node_modules/
+
+# Configurações locais e senhas.
+.env
+.env.*
+!.env.example
+
+# Logs e exercícios locais.
+*.log
+exercicio-produtos.js
+teste-banco.js
