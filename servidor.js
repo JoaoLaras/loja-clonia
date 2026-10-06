@@ -185,7 +185,7 @@ async function buscarProduto(requisicao, resposta) {
         }
 
         // Lê o primeiro registro retornado.
-        // A chave primária garante no máximo um produto por código.
+        // A chave primária garante no máximo um produto porNenhum produto encontrado para a pesquisa. código.
         const produtoEncontrado = resultado.rows[0];
 
         resposta.writeHead(200, {
@@ -223,16 +223,27 @@ async function listarProdutos(requisicao, resposta) {
     // Obtém o filtro modelo.
     // Se não existir, usa texto vazio; trim() remove espaços das extremidades.
     const modeloFiltro = (endereco.searchParams.get("modelo") || "").trim();
+    // Lê a cor enviada na URL.
+    // Se não houver cor, usa texto vazio; trim() remove espaços nas extremidades.
+    const corFiltro = (endereco.searchParams.get("cor") || "").trim();
+
+    // Lê o tamanho e padroniza: "g" vira "G".
+    const tamanhoFiltro = (endereco.searchParams.get("tamanho") || "").trim().toUpperCase();
 
     try {
-        // Busca os produtos cujo modelo contém o texto informado.
-        // Sem filtro, retorna todos os produtos.
+        // Busca produtos que correspondam ao modelo E à cor informados.
         const resultado = await banco.query(
             `SELECT id_produto, modelo, tamanho, cor, quantidade
             FROM produto
             WHERE modelo ILIKE $1
+            AND cor ILIKE $2
+            AND ($3 = '' OR tamanho = $3)
             ORDER BY modelo, id_produto`,
-            ["%" + modeloFiltro + "%"]
+            [
+                "%" + modeloFiltro + "%", // Valor usado em $1.
+                "%" + corFiltro + "%",     // Valor usado em $2.
+                      tamanhoFiltro     // Valor usado em $3.
+            ]
         );
 
         // Verifica se a consulta retornou uma lista vazia.
@@ -280,6 +291,34 @@ async function listarProdutos(requisicao, resposta) {
     }
 }
 
+// Lê uma página HTML e envia seu conteúdo ao navegador.
+async function enviarPaginaHtml(nomeArquivo, resposta) {
+    try {
+        // Monta o caminho do arquivo na pasta do servidor.
+        const caminhoHtml = path.join(__dirname, nomeArquivo);
+
+        // Aguarda a leitura do conteúdo em UTF-8.
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Informa que estamos enviando HTML.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        // Envia a página e encerra a resposta.
+        resposta.end(paginaHtml);
+    } catch (erro) {
+        // Identifica no terminal qual arquivo apresentou problema.
+        console.error("Erro ao carregar " + nomeArquivo + ":", erro.message);
+
+        resposta.writeHead(500, {
+            "Content-Type": "text/plain; charset=utf-8"
+        });
+
+        resposta.end("Não foi possível carregar a página.");
+    }
+}
+
 // async permite aguardar a consulta com await.
 // Esta função atende cada pedido do navegador.
 const servidor = http.createServer(async (requisicao, resposta) => {
@@ -291,32 +330,9 @@ const servidor = http.createServer(async (requisicao, resposta) => {
 
     if (caminho === "/") {
 
-        try {// __dirname é a pasta onde está o servidor.js.
-            
-            // Monta o caminho do index.html nessa mesma pasta.
-            const caminhoHtml = path.join(__dirname, "index.html");
-
-            // Lê o arquivo como texto e aguarda a leitura terminar.
-            const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
-
-            // Informa que a resposta contém HTML em UTF-8.
-            resposta.writeHead(200, {
-                "Content-Type": "text/html; charset=utf-8"
-            });
-
-            // Envia o conteúdo do arquivo ao navegador.
-            resposta.end(paginaHtml);
-            
-        } catch (erro) {
-            // Mostra no terminal se houve problema na leitura.
-            console.error("Erro ao carregar a página:", erro.message);
-
-            resposta.writeHead(500, {
-                "Content-Type": "text/plain; charset=utf-8"
-            });
-
-            resposta.end("Não foi possível carregar a página inicial.");
-        }
+        // Envia a página Sobre usando a mesma função.
+        await enviarPaginaHtml("index.html", resposta);
+        return;  
 
     } else if (caminho === "/cadastrar" && requisicao.method === "POST") {
 
@@ -338,12 +354,11 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         return;
 
     } else if (caminho === "/sobre") {
-        resposta.writeHead(200, {
-            "Content-Type": "text/html; charset=utf-8"
-        });
-
-        resposta.end("<h1>Sobre</h1><p>Sistema da Loja Clonia</p>");
-
+        
+        // Envia a página Sobre usando a mesma função.
+        await enviarPaginaHtml("sobre.html", resposta);
+        return;  
+ 
     } else {
         resposta.writeHead(404, {
             "Content-Type": "text/plain; charset=utf-8"

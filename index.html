@@ -13,12 +13,53 @@
 <body>
     <h1>Loja Clonia</h1>
 
+            <!-- Abre a página Sobre do sistema. -->
+            <p>
+                <a href="/sobre">Sobre o sistema</a>
+            </p>
             <!-- Um link envia uma requisição GET para a rota /produtos. -->
             <p>
                 <a href="/produtos">Consultar todos os produtos</a>
             </p>
 
             <h2>Consultar produto</h2>
+
+            <h2>Pesquisar produtos por modelo</h2>
+
+            <!-- Envia o filtro pela URL para a rota /produtos. -->
+            <form action="/produtos" method="GET">
+                
+                <label for="modeloFiltro">Modelo:</label>
+                <!-- name define o nome do parâmetro enviado ao servidor. -->
+                <input id="modeloFiltro" name="modelo" type="text">
+
+                <!-- Envia a cor junto com o filtro de modelo. -->
+                <label for="corFiltro">Cor:</label>
+                <input id="corFiltro" name="cor" type="text">
+                
+                <!-- Envia o tamanho junto com o filtro de modelo. -->
+                <label for="tamanhoFiltro">Tamanho:</label>
+                <!--<input id="tamanhoFiltro" name="tamanho" type="text">-->
+
+                <!-- Vazio significa pesquisar todos os tamanhos. -->
+                <select id="tamanhoFiltro" name="tamanho">
+                    <option value="">Todos</option>
+                    <option value="P">P</option>
+                    <option value="M">M</option>
+                    <option value="G">G</option>
+                    <option value="GG">GG</option>
+                    <option value="40">40</option>
+                    <option value="42">42</option>
+                    <option value="44">44</option>
+                    <option value="46">46</option>
+                    <option value="48">48</option>
+                    <option value="50">50</option>
+                    <option value="52">52</option>
+                    <option value="54">54</option>
+                </select>
+
+                <button type="submit">Pesquisar</button>
+            </form>
 
             <!-- GET envia o código pela URL para consultar um produto. -->
             <form action="/buscar" method="GET">
@@ -37,17 +78,33 @@
             <form action="/cadastrar" method="POST">
                 <p>
                     <label for="modelo">Modelo:</label>
-                    <input id="modelo" name="modelo" type="text">
+                    <input id="modelo" name="modelo" type="text" required>
                 </p>
 
                 <p>
                     <label for="tamanho">Tamanho:</label>
-                    <input id="tamanho" name="tamanho" type="text">
+                    <!--<input id="tamanho" name="tamanho" type="text">-->
+                    <!-- Exige que o usuário escolha um tamanho para cadastrar. -->
+                    <select id="tamanho" name="tamanho" required>
+                        <option value="">Selecione</option>
+                        <option value="P">P</option>
+                        <option value="M">M</option>
+                        <option value="G">G</option>
+                        <option value="GG">GG</option>
+                        <option value="40">40</option>
+                        <option value="42">42</option>
+                        <option value="44">44</option>
+                        <option value="46">46</option>
+                        <option value="48">48</option>
+                        <option value="50">50</option>
+                        <option value="52">52</option>
+                        <option value="54">54</option>
+                    </select>
                 </p>
 
                 <p>
                     <label for="cor">Cor:</label>
-                    <input id="cor" name="cor" type="text">
+                    <input id="cor" name="cor" type="text" required>
                 </p>
 
                 <button type="submit">Cadastrar</button>
