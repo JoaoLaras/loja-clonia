@@ -1,4 +1,4 @@
-//Ligar banco e servidor node --env-file=.env servidor.js
+//Ligar banco e servidor //* node --env-file=.env servidor.js
 // Carrega o módulo HTTP e o pacote de acesso ao PostgreSQL.
 const http = require("node:http");
 const pg = require("pg");
@@ -12,7 +12,7 @@ const path = require("node:path");
 const banco = new pg.Pool();
 
 //function cadastrarProduto
-// Receberá o processamento da consulta de um produto por código.
+// Receberá o processamento do cadastro de um produto por código.
 async function cadastrarProduto(requisicao, resposta) {
 // Lê os dados recebidos como texto UTF-8.
     requisicao.setEncoding("utf8");
@@ -37,11 +37,13 @@ async function cadastrarProduto(requisicao, resposta) {
     // Rejeita o pedido se qualquer campo estiver vazio.
     // || significa OU: basta uma condição ser verdadeira.
     if (modelo === "" || tamanho === "" || cor === "") {
-        resposta.writeHead(400, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
-
-        resposta.end("Informe modelo, tamanho e cor.");
+        
+        await enviarMensagem(
+            "Campos obrigatórios",
+            "Informe modelo, tamanho e cor.",
+            400,
+            resposta
+        );
 
         // Encerra este atendimento para não enviar outra resposta.
         return;
@@ -60,20 +62,24 @@ async function cadastrarProduto(requisicao, resposta) {
     // includes() retorna true se o tamanho estiver na lista.
     // ! inverte o resultado: entramos se NÃO estiver na lista.
     if (!tamanhosPermitidos.includes(tamanhoPadronizado)) {
-        resposta.writeHead(400, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
 
-        resposta.end(
-            "Tamanho inválido. Use P, M, G, GG ou " +
-            "40, 42, 44, 46, 48, 50, 52, 54."
+        await enviarMensagem(
+            "Tamanho inválido",
+            "Use P, M, G, GG ou " +
+            "40, 42, 44, 46, 48, 50, 52, 54.",
+            400,
+            resposta
         );
-
         // Interrompe o atendimento após informar o problema.
         return;
     }
 
     try {
+
+        // Localiza e lê a página de confirmação.
+        const caminhoHtml = path.join(__dirname, "cadastro-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
         // Cria o produto com estoque inicial zero.
         // O banco gera o id_produto automaticamente.
         // $1, $2 e $3 recebem os valores do array abaixo.
@@ -87,40 +93,52 @@ async function cadastrarProduto(requisicao, resposta) {
         // RETURNING devolve o código gerado pelo banco.
         const codigoCriado = resultado.rows[0].id_produto;
 
-        // Mostra no terminal qual produto foi cadastrado.
-        console.log("Produto cadastrado. Código:", codigoCriado);
+        // Monta o conteúdo que aparecerá na página de confirmação.
+        const dadosCadastro = `<p>Código do produto: ${escaparHtml(codigoCriado)}</p>
+        `;
 
-        // 201 informa que um novo registro foi criado.
+        // Substitui o marcador pelo código gerado no cadastro.
+        const paginaPreenchida = paginaHtml.replace("<!-- DADOS_CADASTRO -->", () => dadosCadastro
+        );
+
+        // 201 indica que o produto foi criado.
+        // Agora enviamos uma página HTML.
         resposta.writeHead(201, {
-            "Content-Type": "text/plain; charset=utf-8"
+            "Content-Type": "text/html; charset=utf-8"
         });
 
-        resposta.end(
-            `Produto cadastrado com sucesso. Código: ${codigoCriado}`
-        );
+        resposta.end(paginaPreenchida);
 
     } catch (erro) {
         // 23505 indica violação de uma regra UNIQUE.
         // Aqui tratamos a combinação repetida de modelo, tamanho e cor.
         if (erro.code === "23505") {
-            resposta.writeHead(409, {
-                "Content-Type": "text/plain; charset=utf-8"
-            });
-
-            resposta.end(
-                "Já existe um produto com esse modelo, tamanho e cor."
+            
+            // Aguarda o envio da página com a mensagem.
+            await enviarMensagem(
+                "Produto duplicado",
+                "Já existe um produto com esse modelo, tamanho e cor.",
+                409,
+                resposta
             );
+
+            // Encerra cadastrarProduto.
             return;
         }
 
         // Outros erros ficam detalhados no terminal.
         console.error("Erro ao cadastrar produto:", erro.message);
+        
+        await enviarMensagem(
+            "Erro ao cadastrar produto.",
+            "Não foi possível cadastrar o produto.",
+            500,
+            resposta
+        );
 
-        resposta.writeHead(500, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
-
-        resposta.end("Não foi possível cadastrar o produto.");
+        // Interrompe o atendimento após informar o problema.
+        return;
+ 
     }
 }
 
@@ -138,11 +156,13 @@ async function buscarProduto(requisicao, resposta) {
 
     // Rejeita campo vazio antes da conversão.
     if (codigoRecebido === "") {
-        resposta.writeHead(400, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do produto.",
+            400,
+            resposta
+        );
 
-        resposta.end("Informe o código do produto.");
         return;
     }
 
@@ -151,16 +171,17 @@ async function buscarProduto(requisicao, resposta) {
 
     // Exige um inteiro positivo dentro do limite do INTEGER
     // usado no campo id_produto do PostgreSQL.
-    if (
-        !Number.isSafeInteger(codigoPesquisado) ||
+    if (!Number.isSafeInteger(codigoPesquisado) ||
         codigoPesquisado <= 0 ||
-        codigoPesquisado > 2147483647
-    ) {
-        resposta.writeHead(400, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
+        codigoPesquisado > 2147483647) {
 
-        resposta.end("Informe um código inteiro entre 1 e 2147483647.");
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+
         return;
     }
 
@@ -174,43 +195,61 @@ async function buscarProduto(requisicao, resposta) {
             [codigoPesquisado]
         );
 
-        // Nenhum registro corresponde ao código pesquisado.
+        // Nenhum produto corresponde ao código pesquisado.
         if (resultado.rows.length === 0) {
-            resposta.writeHead(404, {
-                "Content-Type": "text/plain; charset=utf-8"
-            });
+            // Aguarda o envio da página com a mensagem.
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
 
-            resposta.end("Produto não encontrado.");
+            // Encerra buscarProduto após enviar a resposta.
             return;
         }
 
-        // Lê o primeiro registro retornado.
-        // A chave primária garante no máximo um produto porNenhum produto encontrado para a pesquisa. código.
+        // Lê o único produto encontrado.
         const produtoEncontrado = resultado.rows[0];
 
-        resposta.writeHead(200, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
+        // Monta os parágrafos com os dados desse produto.
+        // <p> representa um parágrafo; não precisamos de <tr> aqui.
+        const dadosProduto = `
+            <p>Código: ${escaparHtml(produtoEncontrado.id_produto)}</p>
+            <p>Modelo: ${escaparHtml(produtoEncontrado.modelo)}</p>
+            <p>Tamanho: ${escaparHtml(produtoEncontrado.tamanho)}</p>
+            <p>Cor: ${escaparHtml(produtoEncontrado.cor)}</p>
+            <p>Quantidade: ${escaparHtml(produtoEncontrado.quantidade)}</p>
+        `;
 
-        // Os nomes das propriedades são os nomes das colunas SQL.
-        resposta.end(
-            `Código: ${produtoEncontrado.id_produto}\n` +
-            `Modelo: ${produtoEncontrado.modelo}\n` +
-            `Tamanho: ${produtoEncontrado.tamanho}\n` +
-            `Cor: ${produtoEncontrado.cor}\n` +
-            `Quantidade: ${produtoEncontrado.quantidade}`
+        // Localiza e lê o arquivo HTML.
+        const caminhoHtml = path.join(__dirname, "produto.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelos dados do produto.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_PRODUTO -->",
+            () => dadosProduto
         );
 
-    } catch (erro) {
-        // Detalhes técnicos ficam no terminal para investigarmos.
-        console.error("Erro ao consultar produto:", erro.message);
-
-        // 500 informa que ocorreu uma falha no processamento.
-        resposta.writeHead(500, {
-            "Content-Type": "text/plain; charset=utf-8"
+        // Envia a página preenchida como HTML.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
         });
 
-        resposta.end("Não foi possível consultar o produto.");
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao consultar produto:", erro.message);
+
+        // Envia a página de mensagem ao navegador.
+        await enviarMensagem(
+            "Erro ao consultar produto",
+            "Não foi possível consultar o produto.",
+            500,
+            resposta
+        );
     }
 }
 
@@ -246,48 +285,64 @@ async function listarProdutos(requisicao, resposta) {
             ]
         );
 
-        // Verifica se a consulta retornou uma lista vazia.
+        // Começa vazio e acumula as linhas da tabela.
+        let listaProdutos = "";
+
+        // Se não houver produtos, monta uma linha com a mensagem.
         if (resultado.rows.length === 0) {
-            resposta.writeHead(200, {
-                "Content-Type": "text/plain; charset=utf-8"
-            });
-
-            resposta.end("Nenhum produto encontrado para a pesquisa.");
-
-            // Encerra listarProdutos para não continuar o processamento.
-            return;
+            listaProdutos = `
+                <tr>
+                    <td colspan="5">
+                        Nenhum produto encontrado para a pesquisa.
+                    </td>
+                </tr>
+            `;
         }
 
-        // let permite acrescentar texto durante as repetições.
-        let listaProdutos = "Produtos cadastrados\n\n";
-
-        // produto recebe um registro da lista por vez.
+        // Percorre os produtos retornados pelo banco.
         for (const produto of resultado.rows) {
-            // \n cria uma quebra de linha na resposta em texto.
-            listaProdutos +=
-                `Código: ${produto.id_produto}\n` +
-                `Modelo: ${produto.modelo}\n` +
-                `Tamanho: ${produto.tamanho}\n` +
-                `Cor: ${produto.cor}\n` +
-                `Quantidade: ${produto.quantidade}\n\n`;
+            // Cada tr representa uma linha; cada td representa uma célula.
+            listaProdutos += `
+                <tr>
+                    <td>${escaparHtml(produto.id_produto)}</td>
+                    <td>${escaparHtml(produto.modelo)}</td>
+                    <td>${escaparHtml(produto.tamanho)}</td>
+                    <td>${escaparHtml(produto.cor)}</td>
+                    <td>${escaparHtml(produto.quantidade)}</td>
+                </tr>
+            `;
         }
 
-        // Envia a lista completa em uma única resposta.
-        resposta.writeHead(200, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
+    // Localiza o arquivo que contém a estrutura da página.
+    const caminhoHtml = path.join(__dirname, "produtos.html");
 
-        resposta.end(listaProdutos);
+    // Lê o HTML como texto.
+    const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+    // Insere o texto das linhas exatamente como foi montado.
+    const paginaPreenchida = paginaHtml.replace(
+        "<!-- LINHAS_PRODUTOS -->",
+        () => listaProdutos
+    );
+
+    // Informa que a resposta contém HTML.
+    resposta.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8"
+    });
+
+    // Envia a página com os produtos inseridos na tabela.
+    resposta.end(paginaPreenchida);
 
     } catch (erro) {
         // Registra os detalhes no terminal.
         console.error("Erro ao listar produtos:", erro.message);
 
-        resposta.writeHead(500, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
-
-        resposta.end("Não foi possível listar os produtos.");
+        await enviarMensagem(
+            "Erro ao listar produtos",
+            "Não foi possível listar os produtos.",
+            500,
+            resposta
+        );
     }
 }
 
@@ -307,17 +362,62 @@ async function enviarPaginaHtml(nomeArquivo, resposta) {
 
         // Envia a página e encerra a resposta.
         resposta.end(paginaHtml);
+
     } catch (erro) {
-        // Identifica no terminal qual arquivo apresentou problema.
+        // Identifica qual arquivo apresentou problema.
         console.error("Erro ao carregar " + nomeArquivo + ":", erro.message);
 
+        await enviarMensagem(
+            "Erro ao carregar a página",
+            "Não foi possível carregar a página.",
+            500,
+            resposta
+        );
+    }
+}
+
+// Converte caracteres especiais para exibir um valor como texto no HTML.
+function escaparHtml(valor) {
+    return String(valor)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+// Preenche a página de mensagem e envia a resposta.
+async function enviarMensagem(titulo, texto, status, resposta) {
+    try {
+        const caminhoHtml = path.join(__dirname, "mensagem.html");
+
+        // A leitura pode falhar, por exemplo, se o arquivo não existir.
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Preenche os marcadores com os textos recebidos.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- TITULO_MENSAGEM -->", () => escaparHtml(titulo))
+            .replace("<!-- TEXTO_MENSAGEM -->", () => escaparHtml(texto));
+
+        resposta.writeHead(status, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+        // Registra o problema para investigarmos.
+        console.error("Erro ao carregar a mensagem:", erro.message);
+
+        // Usa texto simples como alternativa se o HTML falhar.
         resposta.writeHead(500, {
             "Content-Type": "text/plain; charset=utf-8"
         });
 
-        resposta.end("Não foi possível carregar a página.");
+        resposta.end("Não foi possível carregar a página de mensagem.");
     }
 }
+
 
 // async permite aguardar a consulta com await.
 // Esta função atende cada pedido do navegador.
@@ -330,7 +430,7 @@ const servidor = http.createServer(async (requisicao, resposta) => {
 
     if (caminho === "/") {
 
-        // Envia a página Sobre usando a mesma função.
+        // Envia a página inicial usando a mesma função.
         await enviarPaginaHtml("index.html", resposta);
         return;  
 
@@ -358,13 +458,14 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         // Envia a página Sobre usando a mesma função.
         await enviarPaginaHtml("sobre.html", resposta);
         return;  
- 
+    
     } else {
-        resposta.writeHead(404, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
-
-        resposta.end("Página não encontrada.");
+        await enviarMensagem(
+            "Página não encontrada",
+            "O endereço informado não existe no sistema.",
+            404,
+            resposta
+        );
     }
 });
 
