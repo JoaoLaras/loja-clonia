@@ -94,7 +94,15 @@ async function cadastrarProduto(requisicao, resposta) {
         const codigoCriado = resultado.rows[0].id_produto;
 
         // Monta o conteúdo que aparecerá na página de confirmação.
-        const dadosCadastro = `<p>Código do produto: ${escaparHtml(codigoCriado)}</p>
+        // Mostra o código criado e um link para consultar esse produto.
+        const dadosCadastro = `
+            <p>Código do produto: ${escaparHtml(codigoCriado)}</p>
+
+            <p>
+                <a href="/buscar?codigo=${codigoCriado}">
+                    Consultar produto cadastrado
+                </a>
+            </p>
         `;
 
         // Substitui o marcador pelo código gerado no cadastro.
@@ -152,7 +160,7 @@ async function buscarProduto(requisicao, resposta) {
     const endereco = new URL(requisicao.url, "http://localhost:3000");
 
     // Lê o valor do parâmetro codigo e retorna o texto "4".
-    const codigoRecebido = endereco.searchParams.get("codigo");
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
 
     // Rejeita campo vazio antes da conversão.
     if (codigoRecebido === "") {
@@ -227,10 +235,9 @@ async function buscarProduto(requisicao, resposta) {
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
         // Substitui o marcador pelos dados do produto.
-        const paginaPreenchida = paginaHtml.replace(
-            "<!-- DADOS_PRODUTO -->",
-            () => dadosProduto
-        );
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- DADOS_PRODUTO -->", () => dadosProduto)
+            .replace("<!-- CODIGO_PRODUTO -->",() => escaparHtml(produtoEncontrado.id_produto));
 
         // Envia a página preenchida como HTML.
         resposta.writeHead(200, {
@@ -277,7 +284,7 @@ async function listarProdutos(requisicao, resposta) {
             WHERE modelo ILIKE $1
             AND cor ILIKE $2
             AND ($3 = '' OR tamanho = $3)
-            ORDER BY modelo, id_produto`,
+            ORDER BY id_produto`,
             [
                 "%" + modeloFiltro + "%", // Valor usado em $1.
                 "%" + corFiltro + "%",     // Valor usado em $2.
@@ -304,7 +311,12 @@ async function listarProdutos(requisicao, resposta) {
             // Cada tr representa uma linha; cada td representa uma célula.
             listaProdutos += `
                 <tr>
-                    <td>${escaparHtml(produto.id_produto)}</td>
+                    <!-- O código vira um link para a consulta desse produto. -->
+                    <td>
+                        <a href="/buscar?codigo=${produto.id_produto}">
+                            ${escaparHtml(produto.id_produto)}
+                        </a>
+                    </td>
                     <td>${escaparHtml(produto.modelo)}</td>
                     <td>${escaparHtml(produto.tamanho)}</td>
                     <td>${escaparHtml(produto.cor)}</td>
@@ -418,6 +430,99 @@ async function enviarMensagem(titulo, texto, status, resposta) {
     }
 }
 
+//function editaProduto
+// Receberá o processamento da consulta de um produto por código.
+async function editaProduto(requisicao, resposta) {
+// Organiza a URL e lê o código como texto.
+    
+    // Interpreta "/editar?codigo=4" usando a base.
+    // O endereço completo fica: http://localhost:3000/editar?codigo=4
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Lê o valor do parâmetro codigo e retorna o texto "4".
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+    // Rejeita campo vazio antes da conversão.
+    if (codigoRecebido === "") {
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do produto.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    // Converte o filtro para número.
+    const codigoPesquisado = Number(codigoRecebido);
+
+    // Exige um inteiro positivo dentro do limite do INTEGER
+    // usado no campo id_produto do PostgreSQL.
+    if (!Number.isSafeInteger(codigoPesquisado) ||
+        codigoPesquisado <= 0 ||
+        codigoPesquisado > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    try {
+        // O filtro do formulário é enviado como parâmetro.
+        // $1 recebe o primeiro valor do array [codigoPesquisado].
+        const resultado = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+                FROM produto
+                WHERE id_produto = $1`,
+            [codigoPesquisado]
+        );
+
+        // Nenhum produto corresponde ao código pesquisado.
+        if (resultado.rows.length === 0) {
+            // Aguarda o envio da página com a mensagem.
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
+
+            // Encerra buscarProduto após enviar a resposta.
+            return;
+        }
+
+        // Lê o único produto encontrado.
+        const produtoEncontrado = resultado.rows[0];
+
+        // Lê a página que contém o campo de edição.
+        const caminhoHtml = path.join(__dirname, "produto-editar.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Coloca o modelo encontrado dentro do value do input.
+        const paginaPreenchida = paginaHtml.replace("<!-- MODELO_PRODUTO -->",() => escaparHtml(produtoEncontrado.modelo))
+                                           .replace("<!-- COR_PRODUTO -->",() => escaparHtml(produtoEncontrado.cor))
+                                           .replace("<!-- TAMANHO_PRODUTO -->",() => escaparHtml(produtoEncontrado.tamanho));
+        resposta.end(paginaPreenchida);
+
+            } catch (erro) {
+                // Registra os detalhes técnicos no terminal.
+                console.error("Erro ao consultar produto:", erro.message);
+
+                // Envia a página de mensagem ao navegador.
+                await enviarMensagem(
+                    "Erro ao consultar produto",
+                    "Não foi possível consultar o produto.",
+                    500,
+                    resposta
+                );
+            }
+        }
 
 // async permite aguardar a consulta com await.
 // Esta função atende cada pedido do navegador.
@@ -440,7 +545,7 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         await cadastrarProduto(requisicao, resposta);
         return;
         
-    } else if (caminho === "/buscar" || caminho.startsWith("/buscar?")) {
+    } else if (requisicao.method === "GET" && (caminho === "/buscar" || caminho.startsWith("/buscar?"))) {
 
         // Encaminha o processamento para a função.
         await buscarProduto(requisicao, resposta);
@@ -459,6 +564,12 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         await enviarPaginaHtml("sobre.html", resposta);
         return;  
     
+    } else if (requisicao.method === "GET" && (caminho === "/editar" || caminho.startsWith("/editar?"))) {
+
+        // Encaminha o processamento para a função.
+        await editaProduto(requisicao, resposta);
+        return;
+        
     } else {
         await enviarMensagem(
             "Página não encontrada",

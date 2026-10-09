@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar produto - Loja Clonia</title>
+</head>
+    <body>
+        <h1>Editar produto</h1>
+
+        <form action="/atualizar" method="POST">
+            <p>
+                <label for="modelo">Modelo:</label>
+                <input id="modelo" name="modelo" type="text"
+                    value="<!-- MODELO_PRODUTO -->" required>
+            </p>
+
+            <p>
+                <label for="cor">Cor:</label>
+                <input id="cor" name="cor" type="text"
+                    value="<!-- COR_PRODUTO -->" required>
+            </p>
+
+            <p>
+                <label for="tamanho">Tamanho:</label>
+                <input id="tamanho" name="tamanho" type="text"
+                    value="<!-- TAMANHO_PRODUTO -->" required>
+            </p>
+
+            <button type="submit">Salvar alterações</button>
+        </form>
+
+        <p><a href="/">Voltar à página inicial</a></p>
+
+    </body>
+</html>
