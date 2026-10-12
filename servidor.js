@@ -11,6 +11,12 @@ const path = require("node:path");
 // Usa as configurações PG... carregadas do arquivo .env.
 const banco = new pg.Pool();
 
+// Lista compartilhada pelas funções do servidor.
+const tamanhosPermitidos = [
+    "P", "M", "G", "GG",
+    "40", "42", "44", "46", "48", "50", "52", "54"
+];
+
 //function cadastrarProduto
 // Receberá o processamento do cadastro de um produto por código.
 async function cadastrarProduto(requisicao, resposta) {
@@ -52,12 +58,6 @@ async function cadastrarProduto(requisicao, resposta) {
     // Converte o tamanho para maiúsculas.
     // Assim, "g" vira "G"; "54" permanece "54".
     const tamanhoPadronizado = tamanho.toUpperCase();
-
-    // Lista dos tamanhos permitidos no cadastro.
-    const tamanhosPermitidos = [
-        "P", "M", "G", "GG",
-        "40", "42", "44", "46", "48", "50", "52", "54"
-    ];
 
     // includes() retorna true se o tamanho estiver na lista.
     // ! inverte o resultado: entramos se NÃO estiver na lista.
@@ -367,13 +367,30 @@ async function enviarPaginaHtml(nomeArquivo, resposta) {
         // Aguarda a leitura do conteúdo em UTF-8.
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
+        // Monta uma opção HTML para cada tamanho permitido.
+        let opcoesTamanho = "";
+
+        for (const tamanho of tamanhosPermitidos) {
+            opcoesTamanho += `
+                <option value="${escaparHtml(tamanho)}">
+                    ${escaparHtml(tamanho)}
+                </option>
+            `;
+        }
+
+        // Guarda o HTML com as opções inseridas no marcador.
+        // Preenche os tamanhos do cadastro e do filtro.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- OPCOES_TAMANHO_CADASTRO -->", () => opcoesTamanho)
+            .replace("<!-- OPCOES_TAMANHO_FILTRO -->",   () => opcoesTamanho);
+
         // Informa que estamos enviando HTML.
         resposta.writeHead(200, {
             "Content-Type": "text/html; charset=utf-8"
         });
 
         // Envia a página e encerra a resposta.
-        resposta.end(paginaHtml);
+        resposta.end(paginaPreenchida);
 
     } catch (erro) {
         // Identifica qual arquivo apresentou problema.
@@ -430,9 +447,9 @@ async function enviarMensagem(titulo, texto, status, resposta) {
     }
 }
 
-//function editaProduto
+//function mostrarFormularioEdicaoProduto
 // Receberá o processamento da consulta de um produto por código.
-async function editaProduto(requisicao, resposta) {
+async function mostrarFormularioEdicaoProduto(requisicao, resposta) {
 // Organiza a URL e lê o código como texto.
     
     // Interpreta "/editar?codigo=4" usando a base.
@@ -500,29 +517,211 @@ async function editaProduto(requisicao, resposta) {
         // Lê o único produto encontrado.
         const produtoEncontrado = resultado.rows[0];
 
+        // Acumula as opções que serão inseridas no select.
+        let opcoesTamanho = "";
+
+        for (const tamanho of tamanhosPermitidos) {
+            // Marca a opção que corresponde ao tamanho salvo no banco.
+            const selecionado = tamanho === produtoEncontrado.tamanho ? "selected" : "";
+
+            opcoesTamanho += `
+                <option value="${escaparHtml(tamanho)}" ${selecionado}>
+                    ${escaparHtml(tamanho)}
+                </option>
+            `;
+        }
+
         // Lê a página que contém o campo de edição.
         const caminhoHtml = path.join(__dirname, "produto-editar.html");
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
         // Coloca o modelo encontrado dentro do value do input.
-        const paginaPreenchida = paginaHtml.replace("<!-- MODELO_PRODUTO -->",() => escaparHtml(produtoEncontrado.modelo))
-                                           .replace("<!-- COR_PRODUTO -->",() => escaparHtml(produtoEncontrado.cor))
-                                           .replace("<!-- TAMANHO_PRODUTO -->",() => escaparHtml(produtoEncontrado.tamanho));
+        const paginaPreenchida = paginaHtml.replace("<!-- MODELO_PRODUTO -->",    () => escaparHtml(produtoEncontrado.modelo))
+                                           .replace("<!-- COR_PRODUTO -->",       () => escaparHtml(produtoEncontrado.cor))
+                                           .replace("<!-- OPCOES_TAMANHO -->",    () => opcoesTamanho)
+                                           .replaceAll("<!-- CODIGO_PRODUTO -->", () => escaparHtml(produtoEncontrado.id_produto));
         resposta.end(paginaPreenchida);
 
-            } catch (erro) {
-                // Registra os detalhes técnicos no terminal.
-                console.error("Erro ao consultar produto:", erro.message);
+    } catch (erro) {
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao consultar produto:", erro.message);
 
-                // Envia a página de mensagem ao navegador.
-                await enviarMensagem(
-                    "Erro ao consultar produto",
-                    "Não foi possível consultar o produto.",
-                    500,
-                    resposta
-                );
-            }
+        // Envia a página de mensagem ao navegador.
+        await enviarMensagem(
+            "Erro ao consultar produto",
+            "Não foi possível consultar o produto.",
+            500,
+            resposta
+        );
+    }
+}
+
+//function salvarAlteracaoProduto
+// Receberá o processamento de atualizacao de um produto por código.
+async function salvarAlteracaoProduto(requisicao, resposta) {
+// Lê os dados recebidos como texto UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Começa vazio e acumula o conteúdo enviado pelo navegador.
+    let corpo = "";
+
+    // Percorre as partes do corpo da requisição.
+    // await aguarda cada parte chegar.
+    for await (const dadosAtualiza of requisicao) {
+        corpo += dadosAtualiza;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Lê o código enviado no formulário.
+    const codigoRecebido = (dados.get("codigo") || "").trim();
+    const codigoProduto = Number(codigoRecebido);
+
+    // Exige um código inteiro positivo dentro do limite do banco.
+    if (
+        !Number.isSafeInteger(codigoProduto) ||
+        codigoProduto <= 0 ||
+        codigoProduto > 2147483647
+    ) {
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Lê os campos e remove espaços do início e do fim.
+    const modelo  = (dados.get("modelo")  || "").trim();
+    const tamanho = (dados.get("tamanho") || "").trim();
+    const cor     = (dados.get("cor")     || "").trim();
+
+    // Rejeita o pedido se qualquer campo estiver vazio.
+    // || significa OU: basta uma condição ser verdadeira.
+    if (modelo === "" || tamanho === "" || cor === "") {
+        
+        await enviarMensagem(
+            "Campos obrigatórios",
+            "Informe modelo, tamanho e cor.",
+            400,
+            resposta
+        );
+
+        // Encerra este atendimento para não enviar outra resposta.
+        return;
+    }
+
+    // Converte o tamanho para maiúsculas.
+    // Assim, "g" vira "G"; "54" permanece "54".
+    const tamanhoPadronizado = tamanho.toUpperCase();
+
+    // includes() retorna true se o tamanho estiver na lista.
+    // ! inverte o resultado: entramos se NÃO estiver na lista.
+    if (!tamanhosPermitidos.includes(tamanhoPadronizado)) {
+
+        await enviarMensagem(
+            "Tamanho inválido",
+            "Use P, M, G, GG ou " +
+            "40, 42, 44, 46, 48, 50, 52, 54.",
+            400,
+            resposta
+        );
+        // Interrompe o atendimento após informar o problema.
+        return;
+    }
+
+    try {
+
+        // Localiza e lê a página de confirmação.
+        const caminhoHtml = path.join(__dirname, "atualizado-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Atualiza o produto..
+        // $1, $2 e $3 $4 recebem os valores do array abaixo.
+        // Atualiza os campos somente do produto identificado pelo código.
+        const resultado = await banco.query(
+            `UPDATE produto
+            SET modelo = $1,
+                tamanho = $2,
+                cor = $3
+            WHERE id_produto = $4
+            RETURNING id_produto`,
+            [modelo, tamanhoPadronizado, cor, codigoProduto]
+        );
+
+        // Verifica se algum produto correspondeu ao código do UPDATE.
+        if (resultado.rows.length === 0) {
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
         }
+
+        // RETURNING devolve o código do produto atualizado.
+        const codigoAtualizado = resultado.rows[0].id_produto;
+
+        // Monta a confirmação com o código e o link de consulta.
+        const dadosAtualizacao = `
+            <p>Código do produto: ${escaparHtml(codigoAtualizado)}</p>
+
+            <p>
+                <a href="/buscar?codigo=${codigoAtualizado}">
+                    Consultar produto atualizado
+                </a>
+            </p>
+        `;
+
+        // Insere a confirmação no marcador do HTML.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // 200 informa que o produto foi atualizado.
+        // Agora enviamos uma página HTML.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+        // 23505 indica violação de uma regra UNIQUE.
+        // Aqui tratamos a combinação repetida de modelo, tamanho e cor.
+        if (erro.code === "23505") {
+            
+            // Aguarda o envio da página com a mensagem.
+            await enviarMensagem(
+                "Produto duplicado",
+                "Já existe um produto com esse modelo, tamanho e cor.",
+                409,
+                resposta
+            );
+
+            // Encerra salvarAlteracaoProduto.
+            return;
+        }
+
+        // Outros erros ficam detalhados no terminal.
+          console.error("Erro ao atualizar produto:", erro.message);
+        
+        await enviarMensagem(
+            "Erro ao atualizar produto.",
+            "Não foi possível atualizar o produto.",
+            500,
+            resposta
+        );
+
+        // Interrompe o atendimento após informar o problema.
+        return;
+ 
+    }
+}
 
 // async permite aguardar a consulta com await.
 // Esta função atende cada pedido do navegador.
@@ -567,10 +766,15 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     } else if (requisicao.method === "GET" && (caminho === "/editar" || caminho.startsWith("/editar?"))) {
 
         // Encaminha o processamento para a função.
-        await editaProduto(requisicao, resposta);
+        await mostrarFormularioEdicaoProduto(requisicao, resposta);
         return;
-        
-    } else {
+
+    } else if (caminho === "/atualizar" && requisicao.method === "POST") {
+        // Recebe os dados do formulário e atualiza o produto.
+        await salvarAlteracaoProduto(requisicao, resposta);
+    }
+
+    else {
         await enviarMensagem(
             "Página não encontrada",
             "O endereço informado não existe no sistema.",

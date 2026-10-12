@@ -5,9 +5,14 @@
     <title>Editar produto - Loja Clonia</title>
 </head>
     <body>
-        <h1>Editar produto</h1>
+        <h1>Editar produto <!-- CODIGO_PRODUTO --></h1>
 
         <form action="/atualizar" method="POST">
+            
+            <!-- Envia o código do produto sem exibi-lo na tela. -->
+            <input type="hidden" name="codigo"
+                value="<!-- CODIGO_PRODUTO -->">
+
             <p>
                 <label for="modelo">Modelo:</label>
                 <input id="modelo" name="modelo" type="text"
@@ -22,13 +27,16 @@
 
             <p>
                 <label for="tamanho">Tamanho:</label>
-                <input id="tamanho" name="tamanho" type="text"
-                    value="<!-- TAMANHO_PRODUTO -->" required>
+
+                <select id="tamanho" name="tamanho" required>
+                    <!-- OPCOES_TAMANHO -->
+                </select>
             </p>
 
             <button type="submit">Salvar alterações</button>
         </form>
-
+        
+        <p><a href="/buscar?codigo=<!-- CODIGO_PRODUTO -->">Cancelar edição</a></p>
         <p><a href="/">Voltar à página inicial</a></p>
 
     </body>
