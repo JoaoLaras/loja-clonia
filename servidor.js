@@ -77,7 +77,7 @@ async function cadastrarProduto(requisicao, resposta) {
     try {
 
         // Localiza e lê a página de confirmação.
-        const caminhoHtml = path.join(__dirname, "cadastro-sucesso.html");
+        const caminhoHtml = path.join(__dirname, "cadastro-sucesso-produto.html");
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
         // Cria o produto com estoque inicial zero.
@@ -147,6 +147,134 @@ async function cadastrarProduto(requisicao, resposta) {
         // Interrompe o atendimento após informar o problema.
         return;
  
+    }
+}
+
+//function cadastrarCliente
+async function cadastrarCliente(requisicao, resposta) {
+
+    // Lê os dados recebidos como texto UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Começa vazio e acumula o conteúdo enviado pelo navegador.
+    let corpo = "";
+
+    // Percorre as partes do corpo da requisição.
+    // await aguarda cada parte chegar.
+    for await (const parteCadastro of requisicao) {
+        corpo += parteCadastro;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Lê os campos e remove espaços do início e do fim.
+    const nome     = (dados.get("nome")     || "").trim();
+    const cpf      = (dados.get("cpf")      || "").trim();
+    const endereco = (dados.get("endereco") || "").trim();
+    const telefone = (dados.get("telefone") || "").trim();
+    const email    = (dados.get("email")    || "").trim();
+
+    // Rejeita o pedido se o campo nome estiver vazio.
+    if (nome === "") {
+        
+        await enviarMensagem(
+            "Nome obrigatório",
+            "Informe o nome do cliente",
+            400,
+            resposta
+        );
+
+        // Encerra este atendimento para não enviar outra resposta.
+        return;
+    }  
+
+    // Remove pontos, traços e espaços da formatação.
+    const cpfPadronizado = cpf
+        .replaceAll(".", "")
+        .replaceAll("-", "")
+        .replaceAll(" ", "");
+
+    // CPF é opcional; quando informado, precisa passar na validação.
+    if (cpfPadronizado !== "") {
+        
+        const cpfValido = validarCpf(cpfPadronizado);
+
+        if (cpfValido === false) {
+            await enviarMensagem(
+                "CPF inválido",
+                "Informe um CPF válido ou deixe o campo vazio.",
+                400,
+                resposta
+            );
+            return;
+        }
+    }
+
+    // Sem CPF informado, envia NULL para o banco.
+    const cpfBanco = cpfPadronizado === "" ? null : cpfPadronizado;
+
+     try {
+
+        // Localiza e lê a página de confirmação.
+        const caminhoHtml = path.join(__dirname, "cadastro-sucesso-cliente.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // O banco gera o id_cliente automaticamente.
+        // $1, $2, $3, $4, $5 recebem os valores do array abaixo.
+        const resultado = await banco.query(
+            `INSERT INTO cliente (nome, cpf, endereco, telefone, email)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id_cliente`,
+        [nome, cpfBanco, endereco, telefone, email]);
+        
+        const codigoCliente = resultado.rows[0].id_cliente;
+
+        const dadosCadastro = `
+        <p>Código do cliente: ${escaparHtml(codigoCliente)}</p>
+        `;
+
+        // Substitui o marcador pelo código gerado no cadastro.
+        const paginaPreenchida = paginaHtml.replace("<!-- DADOS_CADASTRO -->", () => dadosCadastro
+        );
+
+        // 201 indica que o cliente foi criado.
+        // Agora enviamos uma página HTML.
+        resposta.writeHead(201, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+    }catch (erro) {
+        
+        // 23505 indica violação de uma regra UNIQUE.
+        // Aqui tratamos a combinação de CPF.
+        if (erro.code === "23505") {
+            
+            // Aguarda o envio da página com a mensagem.
+            await enviarMensagem(
+                "Cliente com CPF duplicado",
+                "Já existe um cliente com esse CPF.",
+                409,
+                resposta
+            );
+
+            // Encerra cadastrarCliente.
+            return;
+        }
+
+        // Outros erros ficam detalhados no terminal.
+        console.error("Erro ao cadastrar cliente:", erro.message);
+        
+        await enviarMensagem(
+            "Erro ao cadastrar cliente.",
+            "Não foi possível cadastrar o cliente.",
+            500,
+            resposta
+        );
+
+        // Interrompe o atendimento após informar o problema.
+        return;
     }
 }
 
@@ -357,6 +485,81 @@ async function listarProdutos(requisicao, resposta) {
         );
     }
 }
+
+//function listarClientes
+// Função que receberá o processamento da listagem de clientes.
+async function listarClientes(requisicao, resposta) {
+
+    try {
+        // Busca clientes informados.
+        const resultado = await banco.query(
+            `SELECT id_cliente, nome, cpf, endereco, telefone, email
+            FROM cliente
+            ORDER BY nome, id_cliente`,
+        );
+
+        // Começa vazio e acumula as linhas da tabela.
+        let listaClientes = "";
+
+        // Se não houver clientes, monta uma linha com a mensagem.
+        if (resultado.rows.length === 0) {
+            listaClientes = `
+                <tr>
+                    <td colspan="6">
+                        Nenhum cliente encontrado para a pesquisa.
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Percorre os clientes retornados pelo banco.
+        for (const cliente of resultado.rows) {
+            // Cada tr representa uma linha; cada td representa uma célula.
+            listaClientes += `
+                <tr>
+                    <td>${escaparHtml(cliente.id_cliente)}</td>
+                    <td>${escaparHtml(cliente.nome)}</td>
+                    <td>${escaparHtml(cliente.cpf ?? "")}</td>
+                    <td>${escaparHtml(cliente.endereco ?? "")}</td>
+                    <td>${escaparHtml(cliente.telefone ?? "")}</td>
+                    <td>${escaparHtml(cliente.email ?? "")}</td>
+                </tr>
+            `;
+        }
+
+        // Localiza o arquivo que contém a estrutura da página.
+        const caminhoHtml = path.join(__dirname, "clientes.html");
+
+        // Lê o HTML como texto.
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Insere o texto das linhas exatamente como foi montado.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- LINHAS_CLIENTES -->",
+            () => listaClientes
+        );
+
+        // Informa que a resposta contém HTML.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        // Envia a página com os clientes inseridos na tabela.
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+        // Registra os detalhes no terminal.
+        console.error("Erro ao listar clientes:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao listar clientes",
+            "Não foi possível listar os clientes.",
+            500,
+            resposta
+        );
+    }
+}
+
 
 // Lê uma página HTML e envia seu conteúdo ao navegador.
 async function enviarPaginaHtml(nomeArquivo, resposta) {
@@ -723,6 +926,44 @@ async function salvarAlteracaoProduto(requisicao, resposta) {
     }
 }
 
+// Valida o formato e os dígitos verificadores.
+// Recebe o CPF já sem pontos, traços ou espaços.
+function validarCpf(cpf) {
+    
+    // Verifica se o CPF contém exatamente 11 números.
+    const formatoCorreto = /^[0-9]{11}$/.test(cpf);
+
+    // Se o formato estiver errado, informa que o CPF é inválido.
+    if (formatoCorreto === false) {
+        return false;
+    }
+
+    // Recusa sequências com todos os dígitos iguais.
+    if (cpf === cpf[0].repeat(11)) {
+        return false;
+    }
+
+    // Calcula os dois dígitos verificadores.
+    for (let posicao = 9; posicao <= 10; posicao++) {
+        let soma = 0;
+
+        for (let indice = 0; indice < posicao; indice++) {
+            soma += Number(cpf[indice]) * (posicao + 1 - indice);
+        }
+
+        // % obtém o resto da divisão.
+        const resto = soma % 11;
+        const digitoEsperado = resto < 2 ? 0 : 11 - resto;
+
+        // Compara o cálculo com o dígito informado.
+        if (Number(cpf[posicao]) !== digitoEsperado) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // async permite aguardar a consulta com await.
 // Esta função atende cada pedido do navegador.
 const servidor = http.createServer(async (requisicao, resposta) => {
@@ -732,11 +973,10 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     // Mostra o pedido no terminal do servidor.
     console.log("Método:", requisicao.method, "| Caminho:", caminho);
 
-    if (caminho === "/") {
-
-        // Envia a página inicial usando a mesma função.
+    if (caminho === "/" && requisicao.method === "GET") {
+        // Envia a página inicial.
         await enviarPaginaHtml("index.html", resposta);
-        return;  
+        return;
 
     } else if (caminho === "/cadastrar" && requisicao.method === "POST") {
 
@@ -757,11 +997,10 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         // Encerra o atendimento desta requisição.
         return;
 
-    } else if (caminho === "/sobre") {
-        
-        // Envia a página Sobre usando a mesma função.
+    } else if (caminho === "/sobre" && requisicao.method === "GET") {
+        // Envia a página Sobre.
         await enviarPaginaHtml("sobre.html", resposta);
-        return;  
+        return;
     
     } else if (requisicao.method === "GET" && (caminho === "/editar" || caminho.startsWith("/editar?"))) {
 
@@ -773,7 +1012,24 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         // Recebe os dados do formulário e atualiza o produto.
         await salvarAlteracaoProduto(requisicao, resposta);
     }
+     else if (caminho === "/clientes/novo" && requisicao.method === "GET") { // Envia o formulário de cadastro de clientes.
+        
+        // Envia a página Sobre usando a mesma função.
+        await enviarPaginaHtml("cliente-cadastro.html", resposta);
+        return;  
+    }
+     else if (caminho === "/clientes/cadastrar" && requisicao.method === "POST") {
 
+        // Executa o processamento do cadastro de clientes.
+        await cadastrarCliente(requisicao, resposta);
+        return;
+    }
+    else if (caminho === "/clientes" && requisicao.method === "GET") {
+
+        // Executa o processamento de consulta de clientes.
+        await listarClientes(requisicao, resposta);
+        return;
+    }
     else {
         await enviarMensagem(
             "Página não encontrada",
