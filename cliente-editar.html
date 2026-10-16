@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Edição de Cliente</title>
+</head>
+<body>
+
+    <h1>Edição de Cliente - Código <!-- CODIGO_CLIENTE --></h1>
+
+    <!-- Envia os dados alterados para atualização do cliente. -->
+    <form action="/clientes/atualizar" method="POST">
+
+        <!-- Envia o código do cliente sem exibi-lo no formulário. -->
+        <input
+            type="hidden"
+            name="codigo"
+            value="<!-- CODIGO_CLIENTE -->"
+        >
+
+        <p>
+            <label for="nome">Nome:</label>
+            <input
+                id="nome"
+                name="nome"
+                type="text"
+                value="<!-- NOME_CLIENTE -->"
+                required
+            >
+        </p>
+
+        <p>
+            <label for="cpf">CPF:</label>
+            <input
+                id="cpf"
+                name="cpf"
+                type="text"
+                value="<!-- CPF_CLIENTE -->"
+            >
+        </p>
+
+        <p>
+            <label for="endereco">Endereço:</label>
+            <input
+                id="endereco"
+                name="endereco"
+                type="text"
+                value="<!-- ENDERECO_CLIENTE -->"
+            >
+        </p>
+
+        <p>
+            <label for="telefone">Telefone:</label>
+            <input
+                id="telefone"
+                name="telefone"
+                type="tel"
+                value="<!-- TELEFONE_CLIENTE -->"
+            >
+        </p>
+
+        <p>
+            <label for="email">E-mail:</label>
+            <input
+                id="email"
+                name="email"
+                type="email"
+                value="<!-- EMAIL_CLIENTE -->"
+            >
+        </p>
+
+        <button type="submit">Salvar alterações</button>
+    </form>
+
+    <!-- Retorna à consulta do cliente sem salvar alterações. -->
+    <p>
+        <a href="/clientes/consultar?codigo=<!-- CODIGO_CLIENTE -->">
+            Cancelar edição
+        </a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
+</html>

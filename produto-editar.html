@@ -1,43 +1,74 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+    <!-- Define a codificação de caracteres da página. -->
     <meta charset="UTF-8">
-    <title>Editar produto - Loja Clonia</title>
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Edição de Produto</title>
 </head>
-    <body>
-        <h1>Editar produto <!-- CODIGO_PRODUTO --></h1>
+<body>
 
-        <form action="/atualizar" method="POST">
-            
-            <!-- Envia o código do produto sem exibi-lo na tela. -->
-            <input type="hidden" name="codigo"
-                value="<!-- CODIGO_PRODUTO -->">
+    <h1>Edição de Produto - Código <!-- CODIGO_PRODUTO --></h1>
 
-            <p>
-                <label for="modelo">Modelo:</label>
-                <input id="modelo" name="modelo" type="text"
-                    value="<!-- MODELO_PRODUTO -->" required>
-            </p>
+    <!-- Envia os dados alterados para atualização do produto. -->
+    <form action="/produtos/atualizar" method="POST">
 
-            <p>
-                <label for="cor">Cor:</label>
-                <input id="cor" name="cor" type="text"
-                    value="<!-- COR_PRODUTO -->" required>
-            </p>
+        <!-- Envia o código do produto sem exibi-lo no formulário. -->
+        <input
+            type="hidden"
+            name="codigo"
+            value="<!-- CODIGO_PRODUTO -->"
+        >
 
-            <p>
-                <label for="tamanho">Tamanho:</label>
+        <p>
+            <label for="modelo">Modelo:</label>
+            <input
+                id="modelo"
+                name="modelo"
+                type="text"
+                value="<!-- MODELO_PRODUTO -->"
+                required
+            >
+        </p>
 
-                <select id="tamanho" name="tamanho" required>
-                    <!-- OPCOES_TAMANHO -->
-                </select>
-            </p>
+        <p>
+            <label for="cor">Cor:</label>
+            <input
+                id="cor"
+                name="cor"
+                type="text"
+                value="<!-- COR_PRODUTO -->"
+                required
+            >
+        </p>
 
-            <button type="submit">Salvar alterações</button>
-        </form>
-        
-        <p><a href="/buscar?codigo=<!-- CODIGO_PRODUTO -->">Cancelar edição</a></p>
-        <p><a href="/">Voltar à página inicial</a></p>
+        <p>
+            <label for="tamanho">Tamanho:</label>
 
-    </body>
+            <!-- Recebe as opções de tamanho geradas pelo servidor. -->
+            <select id="tamanho" name="tamanho" required>
+                <!-- OPCOES_TAMANHO -->
+            </select>
+        </p>
+
+        <button type="submit">Salvar alterações</button>
+    </form>
+
+    <!-- Retorna à consulta do produto sem salvar alterações. -->
+    <p>
+        <a href="/produtos/consultar?codigo=<!-- CODIGO_PRODUTO -->">
+            Cancelar edição
+        </a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
 </html>
