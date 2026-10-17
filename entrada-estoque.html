@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Entrada de Estoque</title>
+</head>
+<body>
+
+    <h1>Entrada de Estoque</h1>
+
+    <!-- Envia os dados da entrada de estoque utilizando POST. -->
+    <form action="/estoque/atualizar" method="POST">
+
+    <p>
+        <label for="codigo">Produto:</label>
+        <select id="codigo" name="codigo" required>
+            <option value="">Selecione um produto</option>
+            <!-- OPCOES_PRODUTOS -->
+        </select>
+    </p>
+
+    <p>
+        <label for="estoqueAtual">Estoque atual:</label>
+        <input type="number" id="estoqueAtual" value="0" readonly>
+    </p>
+
+    <p>
+        <label for="quantidade">Quantidade de entrada:</label>
+        <input id="quantidade" name="quantidade" type="number" min="1" step="1" required>
+    </p>
+
+    <!-- <p>
+        <label for="observacao">Observação:</label>
+        <input id="observacao" name="observacao" type="text" placeholder="Observação">
+    </p> -->
+
+        <button type="submit">Registrar entrada</button>
+    </form>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+    <script>
+        // Localiza a seleção de produtos no HTML.
+        const campoProduto = document.getElementById("codigo");
+
+        // Localiza o campo que mostrará o estoque atual.
+        const campoEstoque = document.getElementById("estoqueAtual");
+
+        // Aguarda o usuário selecionar outro produto.
+        campoProduto.addEventListener("change", () => {
+
+            // Obtém a opção escolhida pelo usuário.
+            const opcao = campoProduto.selectedOptions[0];
+
+            // Recupera a quantidade armazenada no atributo data-estoque.
+            const quantidadeEstoque = opcao.dataset.estoque ?? "0";
+
+            // Preenche o campo somente leitura com o estoque do produto.
+            campoEstoque.value = quantidadeEstoque;
+        });
+    </script>
+
+</body>
+</html>

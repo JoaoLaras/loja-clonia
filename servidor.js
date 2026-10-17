@@ -717,7 +717,7 @@ async function cadastrarCliente(requisicao, resposta) {
 }
 
 // Consulta um cliente pelo código informado na URL.
-async function consultarCliente(requisicao, resposta) {
+async function  consultarCliente(requisicao, resposta) {
 
     // Interpreta a URL para acessar seus parâmetros.
     const endereco = new URL(requisicao.url, "http://localhost:3000");
@@ -1001,6 +1001,386 @@ async function mostrarFormularioEdicaoCliente(requisicao, resposta) {
     }
 }
 
+// Atualiza os dados de um cliente existente.
+async function atualizarCliente(requisicao, resposta) {
+
+    // Lê os dados enviados pelo formulário em UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo recebido na requisição.
+    let corpo = "";
+
+    for await (const dadosAtualiza of requisicao) {
+        corpo += dadosAtualiza;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém e converte o código do cliente.
+    const codigoRecebido = (dados.get("codigo") || "").trim();
+    const codigocliente = Number(codigoRecebido);
+
+    // Verifica se o código é um inteiro válido.
+    if (!Number.isSafeInteger(codigocliente) ||
+        codigocliente <= 0 ||
+        codigocliente > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Obtém os campos que serão atualizados.
+    const nome = (dados.get("nome") || "").trim();
+    const cpf = (dados.get("cpf") || "").trim();
+    const endereco = (dados.get("endereco") || "").trim();
+    const email = (dados.get("email") || "").trim();
+    const telefone = (dados.get("telefone") || "").trim();
+
+    // Verifica se os campos obrigatórios foram preenchidos.
+    if (nome === "") {
+
+        await enviarMensagem(
+            "Campos obrigatórios",
+            "Informe o nome do cliente.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Remove pontos, traços e espaços do CPF.
+    const cpfPadronizado = cpf
+        .replaceAll(".", "")
+        .replaceAll("-", "")
+        .replaceAll(" ", "");
+
+    // Verifica o CPF somente quando ele foi informado.
+    if (cpfPadronizado !== "") {
+
+        const cpfValido = validarCpf(cpfPadronizado);
+
+        if (cpfValido === false) {
+
+            await enviarMensagem(
+                "CPF inválido",
+                "Informe um CPF válido ou deixe o campo vazio.",
+                400,
+                resposta
+            );
+            return;
+        }
+    }
+
+    const cpfBanco = cpfPadronizado === "" ? null : cpfPadronizado;
+
+    try {
+
+        // Carrega a página de confirmação da atualização do cliente.
+        const caminhoHtml = path.join(__dirname, "cliente-atualizacao-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Atualiza o cliente identificado pelo código.
+        const resultado = await banco.query(
+            `UPDATE cliente
+             SET nome = $1,
+                 cpf = $2,
+                 endereco = $3,
+                 email = $4,
+                 telefone = $5
+             WHERE id_cliente = $6
+             RETURNING id_cliente`,
+            [nome, cpfBanco, endereco, email, telefone, codigocliente]
+        );
+
+        // Verifica se algum registro foi atualizado.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Cliente não encontrado",
+                "Nenhum cliente corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o código do cliente atualizado.
+        const codigoAtualizado = resultado.rows[0].id_cliente;
+
+        // Monta a confirmação com um link para consultar o cliente.
+        const dadosAtualizacao = `
+            <p>Código do cliente: ${escaparHtml(codigoAtualizado)}</p>
+            <p>
+                <a href="/clientes/consultar?codigo=${codigoAtualizado}">
+                    Consultar cliente atualizado
+                </a>
+            </p>
+        `;
+
+        // Insere os dados da atualização na página de confirmação.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // Retorna HTTP 200 informando que a atualização foi realizada.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Trata combinações duplicadas de cpf.
+        if (erro.code === "23505") {
+
+            await enviarMensagem(
+                "Cliente duplicado",
+                "Já existe um cliente com esse CPF.",
+                409,
+                resposta
+            );
+            return;
+        }
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao atualizar cliente:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao atualizar cliente",
+            "Não foi possível atualizar o cliente.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
+async function mostrarFormularioEntradaEstoque(requisicao, resposta) {
+    try {
+        // Consulta os produtos cadastrados no banco.
+        const resultado = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+            FROM produto
+            ORDER BY id_produto, modelo, tamanho, cor`
+        );
+        
+        // Acumula as opções de produtos para o HTML.
+        let listaProdutos = "";
+
+        if (resultado.rows.length === 0) {
+
+            listaProdutos = `
+                <option value="" disabled>
+                    Nenhum produto cadastrado
+                </option>
+            `;
+        }
+
+  
+
+        // Percorre os produtos retornados pelo banco.
+        for (const produto of resultado.rows) {
+
+            // Monta uma opção para cada produto.
+            listaProdutos += `
+                <option value="${escaparHtml(produto.id_produto)}"
+                        data-estoque="${escaparHtml(produto.quantidade)}">
+                    ${escaparHtml(produto.id_produto)} -
+                    ${escaparHtml(produto.modelo)} -
+                    ${escaparHtml(produto.tamanho)} -
+                    ${escaparHtml(produto.cor)}
+                </option>
+            `;
+        }
+
+        // Carrega a página de listagem de clientes.
+        const caminhoHtml = path.join(__dirname, "entrada-estoque.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelas opções de produtos.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- OPCOES_PRODUTOS -->",
+            () => listaProdutos
+        );
+
+        // Retorna HTTP 200 com o formulário preenchido.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao preencher formulário de entrada de estoque:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao preencher formulário de entrada de estoque",
+            "Não foi possível preencher o formulário de entrada de estoque.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
+
+// Registra a entrada de estoque de um produto.
+async function atualizarEntradaEstoque(requisicao, resposta) {
+
+    // Lê os dados enviados pelo formulário em UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo recebido na requisição.
+    let corpo = "";
+
+    for await (const dadosAtualiza of requisicao) {
+        corpo += dadosAtualiza;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém e converte o código do produto.
+    const codigoRecebido     = (dados.get("codigo") || "").trim();
+    const quantidadeRecebida = (dados.get("quantidade") || "").trim();
+    const observacao         = (dados.get("observacao") || "").trim();
+
+    const codigoProduto = Number(codigoRecebido);
+
+    // Verifica se o código é um inteiro válido.
+    if (!Number.isSafeInteger(codigoProduto) ||
+        codigoProduto <= 0 ||
+        codigoProduto > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    const quantidadeEntrada = Number(quantidadeRecebida);
+
+    // Verifica se a quantidade é um inteiro positivo válido
+    if (!Number.isSafeInteger(quantidadeEntrada) ||
+        quantidadeEntrada <= 0 ||
+        quantidadeEntrada > 2147483647) {
+
+        await enviarMensagem(
+            "Quantidade inválida",
+            "Informe uma quantidade inteira entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        
+        return;
+    }
+
+    try {
+
+        //Consulta o produto que receberá a entrada.
+        const resultadoConsulta = await banco.query(
+            `SELECT id_produto, quantidade
+             FROM produto
+             WHERE id_produto = $1`,
+            [codigoProduto]
+        );
+
+        // Verifica se o produto existe.
+        if (resultadoConsulta.rows.length === 0) {
+
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o código do produto consultado.
+        const codigoProdutoConsultado = resultadoConsulta.rows[0].id_produto;
+
+        // Carrega a página de confirmação da entrada de estoque
+        const caminhoHtml = path.join(__dirname, "entrada-estoque-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+        
+        // Adiciona a quantidade recebida ao estoque do produto.
+        const resultadoUpdate = await banco.query(
+            `UPDATE produto
+             SET quantidade =  quantidade + $1
+             WHERE id_produto = $2
+             AND quantidade <= 2147483647 - $1
+             RETURNING id_produto, quantidade`,
+            [quantidadeEntrada, codigoProdutoConsultado]
+        );
+
+        // Verifica se a entrada pode ser realizada.
+        if (resultadoUpdate.rows.length === 0) {
+
+            await enviarMensagem(
+                "Limite de estoque excedido",
+                "A quantidade informada ultrapassa o limite permitido para o estoque.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        const codigoAtualizado  = resultadoUpdate.rows[0].id_produto;
+        const estoqueAtualizado = resultadoUpdate.rows[0].quantidade;
+
+        // Monta a confirmação com um link para consultar o produto.
+        const dadosAtualizacao = `
+            <p>Código do produto: ${escaparHtml(codigoAtualizado)}</p>
+            <p>Quantidade de entrada: ${escaparHtml(quantidadeEntrada)}</p>
+            <p>Estoque atualizado: ${escaparHtml(estoqueAtualizado)}</p>
+            <p>
+                <a href="/produtos/consultar?codigo=${codigoAtualizado}">
+                    Consultar produto atualizado
+                </a>
+            </p>
+        `;
+
+        // Insere os dados da atualização na página de confirmação.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // Retorna HTTP 200 informando que a atualização foi realizada.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao atualizar estoque do produto:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao atualizar estoque do produto",
+            "Não foi possível atualizar o estoque do produto.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
 
 // Valida o formato e os dígitos verificadores de um CPF.
 function validarCpf(cpf) {
@@ -1238,6 +1618,25 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         await mostrarFormularioEdicaoCliente(requisicao, resposta);
         return;
 
+    // Abre o formulário de atualização do cliente.
+    } else if (caminho === "/clientes/atualizar" && metodo === "POST") {
+
+        await atualizarCliente(requisicao, resposta);
+        return;
+
+    // Abre o formulário de entrada de estoque com os produtos cadastrados.
+    } else if (caminho === "/estoque/novo" && metodo === "GET") {
+
+        await mostrarFormularioEntradaEstoque(requisicao, resposta);
+        return;
+
+        // Abre o formulário de atualização de entrada de estoque.
+    } else if (caminho === "/estoque/atualizar" && metodo === "POST") {
+
+        await atualizarEntradaEstoque(requisicao, resposta);
+        return;
+
+    
     // Abre a página Sobre.
     } else if (caminho === "/sobre" && metodo === "GET") {
 
