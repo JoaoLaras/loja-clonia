@@ -18,12 +18,39 @@
     <form action="/estoque/atualizar" method="POST">
 
     <p>
+        <label for="pesquisaProduto">Pesquisar produto:</label>
+        <input
+            type="text"
+            id="pesquisaProduto"
+            placeholder="Digite o código ou modelo"
+        >
+    </p>
+
+    <p>
+        <label for="filtroTamanho">Tamanho:</label>
+        <select id="filtroTamanho">
+            <option value="">Todos</option>
+            <!-- OPCOES_TAMANHO_ESTOQUE -->
+        </select>
+    </p>
+
+    <p>
+        <label for="filtroCor">Cor:</label>
+        <select id="filtroCor">
+            <option value="">Todas</option>
+            <!-- OPCOES_COR_ESTOQUE -->
+        </select>
+    </p>
+
+    <p>
         <label for="codigo">Produto:</label>
         <select id="codigo" name="codigo" required>
             <option value="">Selecione um produto</option>
             <!-- OPCOES_PRODUTOS -->
         </select>
     </p>
+
+
 
     <p>
         <label for="estoqueAtual">Estoque atual:</label>
@@ -47,25 +74,111 @@
     <p>
         <a href="/">Voltar à página inicial</a>
     </p>
-
+    
     <script>
-        // Localiza a seleção de produtos no HTML.
-        const campoProduto = document.getElementById("codigo");
+        // Localiza o campo de pesquisa por código ou modelo.
+        const campoPesquisa = document.getElementById("pesquisaProduto");
 
-        // Localiza o campo que mostrará o estoque atual.
-        const campoEstoque = document.getElementById("estoqueAtual");
+        // Localiza o campo utilizado para filtrar por tamanho.
+        const campoFiltroTamanho = document.getElementById("filtroTamanho");
 
-        // Aguarda o usuário selecionar outro produto.
-        campoProduto.addEventListener("change", () => {
+        // Localiza o campo utilizado para filtrar por cor.
+        const campoFiltroCor = document.getElementById("filtroCor");
 
-            // Obtém a opção escolhida pelo usuário.
-            const opcao = campoProduto.selectedOptions[0];
+        // Localiza o select que apresenta os produtos cadastrados.
+        const selecaoProdutos = document.getElementById("codigo");
 
-            // Recupera a quantidade armazenada no atributo data-estoque.
-            const quantidadeEstoque = opcao.dataset.estoque ?? "0";
+        // Localiza o campo que mostra o estoque atual do produto.
+        const campoEstoqueAtual = document.getElementById("estoqueAtual");
 
-            // Preenche o campo somente leitura com o estoque do produto.
-            campoEstoque.value = quantidadeEstoque;
+        // Guarda todas as opções originais antes de aplicar os filtros.
+        const todasOpcoesProdutos = Array.from(selecaoProdutos.options);
+
+        // Função responsável por aplicar os filtros de produtos.
+        function filtrarProdutos() {
+
+            // Recupera o texto informado na pesquisa.
+            const textoPesquisa = campoPesquisa.value.trim().toLowerCase();
+
+            // Recupera o tamanho escolhido pelo usuário.
+            const tamanhoSelecionado = campoFiltroTamanho.value;
+
+            // Recupera a cor escolhida pelo usuário.
+            const corSelecionada = campoFiltroCor.value;
+
+            // Remove as opções atualmente exibidas no select.
+            selecaoProdutos.replaceChildren();
+
+            // Percorre todas as opções guardadas originalmente.
+            for (const opcaoProduto of todasOpcoesProdutos) {
+
+                // Recupera a descrição do produto em letras minúsculas.
+                const descricaoProduto = opcaoProduto.textContent.toLowerCase();
+
+                // Recupera o tamanho armazenado no atributo data-tamanho.
+                const tamanhoProduto = opcaoProduto.dataset.tamanho;
+
+                // Recupera o tamanho armazenado no atributo data-cor.
+                const corProduto = opcaoProduto.dataset.cor;
+
+                // Verifica se a descrição contém o texto pesquisado.
+                const textoCorresponde = descricaoProduto.includes(textoPesquisa);
+
+                // Aceita qualquer tamanho se o usuário escolher "Todos".
+                // Caso contrário, compara o tamanho do produto com o filtro.
+                const tamanhoCorresponde = tamanhoSelecionado === "" || tamanhoProduto === tamanhoSelecionado;
+
+                // Recupera a cor do produto.
+                const corCorresponde = corSelecionada === "" || corProduto === corSelecionada;
+
+                // Adiciona somente os produtos que atendem aos dois filtros.
+                if (textoCorresponde && tamanhoCorresponde && corCorresponde) {
+
+                    selecaoProdutos.appendChild(opcaoProduto);
+                }
+            }
+
+            // Limpa a seleção anterior depois de aplicar os filtros.
+            selecaoProdutos.value = "";
+
+            // Limpa a quantidade exibida para evitar um estoque desatualizado.
+            campoEstoqueAtual.value = "";
+        }
+
+        // Executa quando o usuário digita no campo de pesquisa.
+        campoPesquisa.addEventListener("input", () => {
+
+            // Chama a função que aplica todos os filtros.
+            filtrarProdutos();
+        });
+
+        // Executa quando o usuário altera o tamanho.
+        campoFiltroTamanho.addEventListener("change", () => {
+
+            // Chama a mesma função utilizada pela pesquisa.
+            filtrarProdutos();
+        });
+
+        // Executa quando o usuário altera a cor.
+        campoFiltroCor.addEventListener("change", () => {
+
+            // Chama a mesma função utilizada pela pesquisa.
+            filtrarProdutos();
+        });
+
+
+        // Executa quando o usuário seleciona um produto.
+        selecaoProdutos.addEventListener("change", () => {
+
+            // Recupera a opção escolhida dentro do select.
+            const produtoSelecionado = selecaoProdutos.selectedOptions[0];
+
+            // Recupera o estoque armazenado no atributo data-estoque.
+            // Se não existir uma opção selecionada, utiliza zero.
+            const quantidadeEstoque = produtoSelecionado?.dataset.estoque ?? "0";
+
+            // Apresenta a quantidade no campo de estoque atual.
+            campoEstoqueAtual.value = quantidadeEstoque;
         });
     </script>
 

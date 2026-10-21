@@ -1184,15 +1184,15 @@ async function mostrarFormularioEntradaEstoque(requisicao, resposta) {
             `;
         }
 
-  
-
         // Percorre os produtos retornados pelo banco.
         for (const produto of resultado.rows) {
 
-            // Monta uma opção para cada produto.
+            // Monta as opções com os dados utilizados pelos filtros.
             listaProdutos += `
                 <option value="${escaparHtml(produto.id_produto)}"
-                        data-estoque="${escaparHtml(produto.quantidade)}">
+                        data-estoque="${escaparHtml(produto.quantidade)}"
+                        data-tamanho="${escaparHtml(produto.tamanho)}"
+                        data-cor="${escaparHtml(produto.cor)}">
                     ${escaparHtml(produto.id_produto)} -
                     ${escaparHtml(produto.modelo)} -
                     ${escaparHtml(produto.tamanho)} -
@@ -1201,15 +1201,51 @@ async function mostrarFormularioEntradaEstoque(requisicao, resposta) {
             `;
         }
 
+        // Acumula as opções de tamanho para o filtro.
+        let opcoesTamanho = "";
+
+        // Percorre os tamanhos permitidos.
+        for (const tamanho of tamanhosPermitidos) {
+
+            // Monta uma opção para cada tamanho.
+            opcoesTamanho += `
+                <option value="${escaparHtml(tamanho)}">
+                    ${escaparHtml(tamanho)}
+                </option>
+            `;
+        }
+
+        // Busca as cores cadastradas, sem repetições.
+        const resultadoCores = await banco.query(`
+            SELECT DISTINCT cor
+            FROM produto
+            WHERE cor IS NOT NULL
+            ORDER BY cor
+        `);
+
+        // Acumula as opções de cor para o filtro.
+        let opcoesCor = "";
+
+        // Percorre as cores cadastradas.
+        for (const cor of resultadoCores.rows) {
+
+            // Monta uma opção para cada cor.
+            opcoesCor += `
+                <option value="${escaparHtml(cor.cor)}">
+                    ${escaparHtml(cor.cor)}
+                </option>
+            `;
+        }
+        
         // Carrega a página de listagem de clientes.
         const caminhoHtml = path.join(__dirname, "entrada-estoque.html");
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
-        // Substitui o marcador pelas opções de produtos.
-        const paginaPreenchida = paginaHtml.replace(
-            "<!-- OPCOES_PRODUTOS -->",
-            () => listaProdutos
-        );
+        // Preenche as opções de produtos, tamanhos e cores no formulário.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- OPCOES_PRODUTOS -->",        () => listaProdutos)
+            .replace("<!-- OPCOES_TAMANHO_ESTOQUE -->", () => opcoesTamanho)
+            .replace("<!-- OPCOES_COR_ESTOQUE -->",     () => opcoesCor);
 
         // Retorna HTTP 200 com o formulário preenchido.
         resposta.writeHead(200, {
