@@ -1269,66 +1269,104 @@ async function mostrarFormularioEntradaEstoque(requisicao, resposta) {
     }
 }
 
-
-// Registra a entrada de estoque de um produto.
+ // Registra a entrada de estoque de um produto.
 async function atualizarEntradaEstoque(requisicao, resposta) {
 
-    // Lê os dados enviados pelo formulário em UTF-8.
-    requisicao.setEncoding("utf8");
+    // Guarda a conexão do PostgreSQL.
+    let conexao;
 
-    // Acumula o conteúdo recebido na requisição.
-    let corpo = "";
+    // Indica se existe uma transação em andamento.
+    let transacaoAberta = false;
 
-    for await (const dadosAtualiza of requisicao) {
-        corpo += dadosAtualiza;
-    }
+    // Indica se a conexão deverá ser descartada.
+    let descartarConexao = false;
 
-    // Interpreta os campos enviados pelo formulário.
-    const dados = new URLSearchParams(corpo);
+    // Indica se o COMMIT foi iniciado.
+    let commitIniciado = false;
 
-    // Obtém e converte o código do produto.
-    const codigoRecebido     = (dados.get("codigo") || "").trim();
-    const quantidadeRecebida = (dados.get("quantidade") || "").trim();
-    const observacao         = (dados.get("observacao") || "").trim();
-
-    const codigoProduto = Number(codigoRecebido);
-
-    // Verifica se o código é um inteiro válido.
-    if (!Number.isSafeInteger(codigoProduto) ||
-        codigoProduto <= 0 ||
-        codigoProduto > 2147483647) {
-
-        await enviarMensagem(
-            "Código inválido",
-            "Informe um código inteiro entre 1 e 2147483647.",
-            400,
-            resposta
-        );
-        return;
-    }
-
-    const quantidadeEntrada = Number(quantidadeRecebida);
-
-    // Verifica se a quantidade é um inteiro positivo válido
-    if (!Number.isSafeInteger(quantidadeEntrada) ||
-        quantidadeEntrada <= 0 ||
-        quantidadeEntrada > 2147483647) {
-
-        await enviarMensagem(
-            "Quantidade inválida",
-            "Informe uma quantidade inteira entre 1 e 2147483647.",
-            400,
-            resposta
-        );
-        
-        return;
-    }
+    // Indica se a gravação foi confirmada.
+    let gravacaoConfirmada = false;
 
     try {
 
-        //Consulta o produto que receberá a entrada.
-        const resultadoConsulta = await banco.query(
-            `SELECT id_produto, quantidade
+        // Lê os dados enviados pelo formulário em UTF-8.
+        requisicao.setEncoding("utf8");
+
+        // Acumula o conteúdo recebido na requisição.
+        let corpo = "";
+
+        for await (const dadosAtualiza of requisicao) {
+            corpo += dadosAtualiza;
+        }
+
+        // Interpreta os campos enviados pelo formulário.
+        const dados = new URLSearchParams(corpo);
+
+        // Recupera os valores informados pelo usuário.
+        const codigoRecebido = (dados.get("codigo") || "").trim();
+        const quantidadeRecebida = (dados.get("quantidade") || "").trim();
+        const observacao = (dados.get("observacao") || "").trim();
+
+        // Converte o código para número.
+        const codigoProduto = Number(codigoRecebido);
+
+        // Valida o código do produto.
+        if (
+            codigoRecebido === "" ||
+            !Number.isSafeInteger(codigoProduto) ||
+            codigoProduto <= 0 ||
+            codigoProduto > 2147483647
+        ) {
+
+            await enviarMensagem(
+                "Código inválido",
+                "Informe um código inteiro entre 1 e 2147483647.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Converte a quantidade para número.
+        const quantidadeEntrada = Number(quantidadeRecebida);
+
+        // Valida a quantidade informada.
+        if (
+            quantidadeRecebida === "" ||
+            !Number.isSafeInteger(quantidadeEntrada) ||
+            quantidadeEntrada <= 0 ||
+            quantidadeEntrada > 2147483647
+        ) {
+
+            await enviarMensagem(
+                "Quantidade inválida",
+                "Informe uma quantidade inteira entre 1 e 2147483647.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Carrega o HTML antes de iniciar a transação.
+        const caminhoHtml = path.join(
+            __dirname,
+            "entrada-estoque-sucesso.html"
+        );
+
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Reserva uma conexão do Pool.
+        conexao = await banco.connect();
+
+        // Inicia a transação.
+        await conexao.query("BEGIN");
+
+        // Informa que existe uma transação aberta.
+        transacaoAberta = true;
+
+        // Consulta o produto dentro da mesma transação.
+        const resultadoConsulta = await conexao.query(
+            `SELECT id_produto
              FROM produto
              WHERE id_produto = $1`,
             [codigoProduto]
@@ -1336,6 +1374,10 @@ async function atualizarEntradaEstoque(requisicao, resposta) {
 
         // Verifica se o produto existe.
         if (resultadoConsulta.rows.length === 0) {
+
+            // Encerra a transação sem alterações.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
 
             await enviarMensagem(
                 "Produto não encontrado",
@@ -1347,38 +1389,63 @@ async function atualizarEntradaEstoque(requisicao, resposta) {
         }
 
         // Obtém o código do produto consultado.
-        const codigoProdutoConsultado = resultadoConsulta.rows[0].id_produto;
+        const codigoProdutoConsultado =
+            resultadoConsulta.rows[0].id_produto;
 
-        // Carrega a página de confirmação da entrada de estoque
-        const caminhoHtml = path.join(__dirname, "entrada-estoque-sucesso.html");
-        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
-        
-        // Adiciona a quantidade recebida ao estoque do produto.
-        const resultadoUpdate = await banco.query(
+        // Atualiza o saldo, respeitando o limite do INTEGER.
+        const resultadoUpdate = await conexao.query(
             `UPDATE produto
-             SET quantidade =  quantidade + $1
+             SET quantidade = quantidade + $1
              WHERE id_produto = $2
-             AND quantidade <= 2147483647 - $1
+               AND quantidade <= 2147483647 - $1
              RETURNING id_produto, quantidade`,
             [quantidadeEntrada, codigoProdutoConsultado]
         );
 
-        // Verifica se a entrada pode ser realizada.
+        // Verifica se o UPDATE conseguiu alterar o produto.
         if (resultadoUpdate.rows.length === 0) {
 
+            // Encerra a transação sem confirmar a entrada.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
+
             await enviarMensagem(
-                "Limite de estoque excedido",
-                "A quantidade informada ultrapassa o limite permitido para o estoque.",
+                "Entrada não realizada",
+                "O produto não pôde ser atualizado. Verifique se existe e se a quantidade ultrapassa o limite do estoque.",
                 400,
                 resposta
             );
             return;
         }
 
-        const codigoAtualizado  = resultadoUpdate.rows[0].id_produto;
+        // Recupera os valores retornados pelo UPDATE.
+        const codigoAtualizado = resultadoUpdate.rows[0].id_produto;
         const estoqueAtualizado = resultadoUpdate.rows[0].quantidade;
 
-        // Monta a confirmação com um link para consultar o produto.
+        // Registra o histórico da entrada de estoque.
+        await conexao.query(
+            `INSERT INTO movimentacao_estoque
+                (id_produto, tipo, quantidade, observacao)
+             VALUES
+                ($1, 'E', $2, $3)`,
+            [
+                codigoAtualizado,
+                quantidadeEntrada,
+                observacao || null
+            ]
+        );
+
+        // Indica que vamos tentar confirmar a transação.
+        commitIniciado = true;
+
+        // Confirma o UPDATE e o INSERT juntos.
+        await conexao.query("COMMIT");
+
+        // Marca a transação como encerrada e confirmada.
+        transacaoAberta = false;
+        gravacaoConfirmada = true;
+
+        // Monta os dados exibidos na confirmação.
         const dadosAtualizacao = `
             <p>Código do produto: ${escaparHtml(codigoAtualizado)}</p>
             <p>Quantidade de entrada: ${escaparHtml(quantidadeEntrada)}</p>
@@ -1390,13 +1457,13 @@ async function atualizarEntradaEstoque(requisicao, resposta) {
             </p>
         `;
 
-        // Insere os dados da atualização na página de confirmação.
+        // Substitui o marcador pelos dados atualizados.
         const paginaPreenchida = paginaHtml.replace(
             "<!-- DADOS_ATUALIZADO -->",
             () => dadosAtualizacao
         );
 
-        // Retorna HTTP 200 informando que a atualização foi realizada.
+        // Envia a confirmação ao navegador.
         resposta.writeHead(200, {
             "Content-Type": "text/html; charset=utf-8"
         });
@@ -1405,16 +1472,89 @@ async function atualizarEntradaEstoque(requisicao, resposta) {
 
     } catch (erro) {
 
-        // Registra os detalhes técnicos no terminal.
-        console.error("Erro ao atualizar estoque do produto:", erro.message);
+        // Registra o erro original no terminal.
+        console.error("Erro ao registrar entrada de estoque:", erro);
 
-        await enviarMensagem(
-            "Erro ao atualizar estoque do produto",
-            "Não foi possível atualizar o estoque do produto.",
-            500,
-            resposta
-        );
-        return;
+        // Se o COMMIT começou, não sabemos necessariamente
+        // se a gravação foi confirmada quando ocorre uma falha.
+        if (commitIniciado && !gravacaoConfirmada) {
+
+            // Evita reutilizar uma conexão em estado incerto.
+            descartarConexao = true;
+        }
+
+        // Tenta desfazer a transação que ainda estiver aberta.
+        if (conexao && transacaoAberta && !gravacaoConfirmada) {
+
+            try {
+
+                await conexao.query("ROLLBACK");
+
+                // O ROLLBACK foi executado.
+                transacaoAberta = false;
+
+            } catch (erroRollback) {
+
+                // Não reutiliza a conexão se o ROLLBACK falhar.
+                descartarConexao = true;
+
+                console.error(
+                    "Erro ao desfazer transação:",
+                    erroRollback.message
+                );
+            }
+        }
+
+        // Se a resposta já começou, não envia outra página HTTP.
+        if (resposta.headersSent) {
+
+            // Finaliza a resposta somente se ainda estiver aberta.
+            if (!resposta.writableEnded) {
+                resposta.end();
+            }
+
+            return;
+        }
+
+        // Se houve falha durante o COMMIT, o resultado pode ser incerto.
+        if (commitIniciado && !gravacaoConfirmada) {
+
+            await enviarMensagem(
+                "Não foi possível confirmar o resultado",
+                "Verifique o saldo e o histórico do produto antes de tentar novamente.",
+                500,
+                resposta
+            );
+
+        } else if (gravacaoConfirmada) {
+
+            // O banco confirmou a operação, mas ocorreu
+            // algum erro posterior, como na resposta HTML.
+            await enviarMensagem(
+                "Entrada registrada",
+                "A entrada foi gravada, mas ocorreu um problema ao apresentar a confirmação.",
+                500,
+                resposta
+            );
+
+        } else {
+
+            // Erro antes da confirmação da transação.
+            await enviarMensagem(
+                "Erro ao atualizar estoque",
+                "Não foi possível concluir a operação.",
+                500,
+                resposta
+            );
+        }
+
+    } finally {
+
+        // Devolve a conexão ao Pool ou a descarta,
+        // caso tenha ocorrido uma falha que impeça sua reutilização.
+        if (conexao) {
+            conexao.release(descartarConexao);
+        }
     }
 }
 
@@ -1568,6 +1708,148 @@ async function enviarMensagem(titulo, texto, status, resposta) {
     }
 }
 
+async function listarMovimentacoesEstoque(requisicao, resposta) {
+
+    try {
+        // Interpreta a URL para acessar seus parâmetros.
+        const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+        // Obtém o código informado e remove espaços das extremidades.
+        const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+        // Obtém e padroniza o tipo da movimentacao.
+        const tipoRecebido = (endereco.searchParams.get("tipo") || "").trim().toUpperCase();    
+
+        if (tipoRecebido !== "" && tipoRecebido !== "E" && tipoRecebido !== "S") {
+            await enviarMensagem(
+                "Tipo inválido",
+                "Informe um tipo válido (E para Entrada ou S para Saída).",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Código opcional para filtrar as movimentacoes.
+        let codigoPesquisado = null;
+
+        if (codigoRecebido !== "") {
+
+            // Converte o código recebido para número.
+            codigoPesquisado = Number(codigoRecebido);
+
+            // Verifica se o código é um inteiro positivo dentro do limite do PostgreSQL.
+            if (!Number.isSafeInteger(codigoPesquisado) ||
+                codigoPesquisado <= 0 ||
+                codigoPesquisado > 2147483647) {
+
+                await enviarMensagem(
+                    "Código inválido",
+                    "Informe um código inteiro entre 1 e 2147483647.",
+                    400,
+                    resposta
+                );
+                return;
+            }
+        }
+        
+        const movimentacoes = await banco.query(
+            `SELECT
+                produto.id_produto,
+                produto.modelo,
+                movimentacao_estoque.tipo,
+                movimentacao_estoque.quantidade,
+                movimentacao_estoque.data_movimentacao,
+                movimentacao_estoque.observacao
+            FROM movimentacao_estoque
+            INNER JOIN produto
+                ON produto.id_produto = movimentacao_estoque.id_produto
+            WHERE ($1::INTEGER IS NULL OR produto.id_produto = $1)
+            AND ($2 = '' OR movimentacao_estoque.tipo = $2)
+            ORDER BY movimentacao_estoque.data_movimentacao DESC,
+                     movimentacao_estoque.id_movimentacao DESC`,
+            [codigoPesquisado, tipoRecebido]
+        );
+
+        let listaMovtoEstoque = "";
+
+        // Monta uma mensagem quando nenhuma movimentação for encontrada.
+        if (movimentacoes.rows.length === 0) {
+
+            listaMovtoEstoque = `
+                <tr>
+                    <td colspan="6">
+                        Nenhuma movimentação encontrada para a pesquisa.
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Percorre as movimentacoes retornadas pelo banco.
+        for (const movimentacao_estoque of movimentacoes.rows) {
+
+            // Formata a data e hora da movimentacao.
+            const dataFormatada = movimentacao_estoque.data_movimentacao.toLocaleString("pt-BR", {
+                timeZone: "America/Sao_Paulo"
+            });
+            
+            let tipoDescricao = "";
+
+            if (movimentacao_estoque.tipo === "E") {
+                tipoDescricao = "Entrada";
+            } else {
+                tipoDescricao = "Saída";
+            }
+            
+            // Monta uma linha da tabela para cada movimentacao.
+            listaMovtoEstoque += `
+                    
+                <tr>
+                    <td>${escaparHtml(movimentacao_estoque.id_produto)}</td>
+                    <td>${escaparHtml(movimentacao_estoque.modelo)}</td>
+                    <td>${escaparHtml(tipoDescricao)}</td>
+                    <td>${escaparHtml(dataFormatada)}</td>
+                    <td>${escaparHtml(movimentacao_estoque.quantidade)}</td>
+                    <td>${escaparHtml(movimentacao_estoque.observacao ?? "")}</td>
+                </tr>`;
+        }
+
+        const selectedTodas    = tipoRecebido === "";
+        const selectedEntradas = tipoRecebido === "E";
+        const selectedSaidas   = tipoRecebido === "S";
+
+        // Carrega a estrutura HTML do histórico de movimentações.
+        const caminhoHtml = path.join(__dirname, "estoque-movimentacoes.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelas linhas montadas.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- LINHAS_MOVIMENTACOES -->", () => listaMovtoEstoque)
+            .replace("<!-- CODIGO_PESQUISADO -->",    () => escaparHtml(codigoPesquisado ?? ""))
+            .replace("<!-- SELECTED_TODAS -->",       () => selectedTodas ? "selected" : "")
+            .replace("<!-- SELECTED_ENTRADAS -->",    () => selectedEntradas ? "selected" : "")
+            .replace("<!-- SELECTED_SAIDAS -->",      () => selectedSaidas ? "selected" : "");
+
+        // Envia a página com as movimentações de estoque.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        console.error("Erro ao listar movimentações:", erro);
+
+        await enviarMensagem(
+            "Erro",
+            "Não foi possível consultar as movimentações de estoque.",
+            500,
+            resposta
+        );
+    }
+}
+
 
 
 //Fim das funções do servidor HTTP
@@ -1672,7 +1954,11 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         await atualizarEntradaEstoque(requisicao, resposta);
         return;
 
-    
+    } else if (caminho === "/estoque/movimentacoes" && metodo === "GET") {
+        
+        await listarMovimentacoesEstoque(requisicao, resposta);
+        return;
+
     // Abre a página Sobre.
     } else if (caminho === "/sobre" && metodo === "GET") {
 
