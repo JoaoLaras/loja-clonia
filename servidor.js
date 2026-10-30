@@ -213,7 +213,7 @@ async function consultarProduto(requisicao, resposta) {
         // Insere os dados e o código do produto nos marcadores.
         const paginaPreenchida = paginaHtml
             .replace("<!-- DADOS_PRODUTO -->", () => dadosProduto)
-            .replace(
+            .replaceAll(
                 "<!-- CODIGO_PRODUTO -->",
                 () => escaparHtml(produtoEncontrado.id_produto)
             );
@@ -1269,6 +1269,112 @@ async function mostrarFormularioEntradaEstoque(requisicao, resposta) {
     }
 }
 
+async function mostrarFormularioSaidaEstoque(requisicao, resposta) {
+    try {
+        // Consulta os produtos cadastrados no banco.
+        const resultado = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+            FROM produto
+            ORDER BY id_produto, modelo, tamanho, cor`
+        );
+        
+        // Acumula as opções de produtos para o HTML.
+        let listaProdutos = "";
+
+        if (resultado.rows.length === 0) {
+
+            listaProdutos = `
+                <option value="" disabled>
+                    Nenhum produto cadastrado
+                </option>
+            `;
+        }
+
+        // Percorre os produtos retornados pelo banco.
+        for (const produto of resultado.rows) {
+
+            // Monta as opções com os dados utilizados pelos filtros.
+            listaProdutos += `
+                <option value="${escaparHtml(produto.id_produto)}"
+                        data-estoque="${escaparHtml(produto.quantidade)}"
+                        data-tamanho="${escaparHtml(produto.tamanho)}"
+                        data-cor="${escaparHtml(produto.cor)}">
+                    ${escaparHtml(produto.id_produto)} -
+                    ${escaparHtml(produto.modelo)} -
+                    ${escaparHtml(produto.tamanho)} -
+                    ${escaparHtml(produto.cor)}
+                </option>
+            `;
+        }
+
+        // Acumula as opções de tamanho para o filtro.
+        let opcoesTamanho = "";
+
+        // Percorre os tamanhos permitidos.
+        for (const tamanho of tamanhosPermitidos) {
+
+            // Monta uma opção para cada tamanho.
+            opcoesTamanho += `
+                <option value="${escaparHtml(tamanho)}">
+                    ${escaparHtml(tamanho)}
+                </option>
+            `;
+        }
+
+        // Busca as cores cadastradas, sem repetições.
+        const resultadoCores = await banco.query(`
+            SELECT DISTINCT cor
+            FROM produto
+            WHERE cor IS NOT NULL
+            ORDER BY cor
+        `);
+
+        // Acumula as opções de cor para o filtro.
+        let opcoesCor = "";
+
+        // Percorre as cores cadastradas.
+        for (const cor of resultadoCores.rows) {
+
+            // Monta uma opção para cada cor.
+            opcoesCor += `
+                <option value="${escaparHtml(cor.cor)}">
+                    ${escaparHtml(cor.cor)}
+                </option>
+            `;
+        }
+        
+        // Carrega a página de listagem de clientes.
+        const caminhoHtml = path.join(__dirname, "saida-estoque.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Preenche as opções de produtos, tamanhos e cores no formulário.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- OPCOES_PRODUTOS -->",        () => listaProdutos)
+            .replace("<!-- OPCOES_TAMANHO_ESTOQUE -->", () => opcoesTamanho)
+            .replace("<!-- OPCOES_COR_ESTOQUE -->",     () => opcoesCor);
+
+        // Retorna HTTP 200 com o formulário preenchido.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao preencher formulário de entrada de estoque:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao preencher formulário de entrada de estoque",
+            "Não foi possível preencher o formulário de entrada de estoque.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
  // Registra a entrada de estoque de um produto.
 async function atualizarEntradaEstoque(requisicao, resposta) {
 
@@ -1533,6 +1639,338 @@ async function atualizarEntradaEstoque(requisicao, resposta) {
             await enviarMensagem(
                 "Entrada registrada",
                 "A entrada foi gravada, mas ocorreu um problema ao apresentar a confirmação.",
+                500,
+                resposta
+            );
+
+        } else {
+
+            // Erro antes da confirmação da transação.
+            await enviarMensagem(
+                "Erro ao atualizar estoque",
+                "Não foi possível concluir a operação.",
+                500,
+                resposta
+            );
+        }
+
+    } finally {
+
+        // Devolve a conexão ao Pool ou a descarta,
+        // caso tenha ocorrido uma falha que impeça sua reutilização.
+        if (conexao) {
+            conexao.release(descartarConexao);
+        }
+    }
+}
+
+ // Registra a saida de estoque de um produto.
+async function atualizarSaidaEstoque(requisicao, resposta) {
+
+    // Guarda a conexão do PostgreSQL.
+    let conexao;
+
+    // Indica se existe uma transação em andamento.
+    let transacaoAberta = false;
+
+    // Indica se a conexão deverá ser descartada.
+    let descartarConexao = false;
+
+    // Indica se o COMMIT foi iniciado.
+    let commitIniciado = false;
+
+    // Indica se a gravação foi confirmada.
+    let gravacaoConfirmada = false;
+
+    try {
+
+        // Lê os dados enviados pelo formulário em UTF-8.
+        requisicao.setEncoding("utf8");
+
+        // Acumula o conteúdo recebido na requisição.
+        let corpo = "";
+
+        for await (const dadosAtualiza of requisicao) {
+            corpo += dadosAtualiza;
+        }
+
+        // Interpreta os campos enviados pelo formulário.
+        const dados = new URLSearchParams(corpo);
+
+        // Recupera os valores informados pelo usuário.
+        const codigoRecebido = (dados.get("codigo") || "").trim();
+        const quantidadeRecebida = (dados.get("quantidade") || "").trim();
+        const observacao = (dados.get("observacao") || "").trim();
+
+        // Converte o código para número.
+        const codigoProduto = Number(codigoRecebido);
+
+        // Valida o código do produto.
+        if (
+            codigoRecebido === "" ||
+            !Number.isSafeInteger(codigoProduto) ||
+            codigoProduto <= 0 ||
+            codigoProduto > 2147483647
+        ) {
+
+            await enviarMensagem(
+                "Código inválido",
+                "Informe um código inteiro entre 1 e 2147483647.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Verifica se a justificativa da saída foi informada.
+        if (observacao === "") {
+
+            await enviarMensagem(
+                "Justificativa obrigatória",
+                "Informe o motivo da saída de estoque.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Converte a quantidade para número.
+        const quantidadeSaida = Number(quantidadeRecebida);
+
+        // Valida a quantidade informada.
+        if (
+            quantidadeRecebida === "" ||
+            !Number.isSafeInteger(quantidadeSaida) ||
+            quantidadeSaida <= 0 ||
+            quantidadeSaida > 2147483647
+        ) {
+
+            await enviarMensagem(
+                "Quantidade inválida",
+                "Informe uma quantidade inteira entre 1 e 2147483647.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Carrega o HTML antes de iniciar a transação.
+        const caminhoHtml = path.join(
+            __dirname,
+            "saida-estoque-sucesso.html"
+        );
+
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Reserva uma conexão do Pool.
+        conexao = await banco.connect();
+
+        // Inicia a transação.
+        await conexao.query("BEGIN");
+
+        // Informa que existe uma transação aberta.
+        transacaoAberta = true;
+
+        // Consulta o produto e seu saldo atual.
+        const resultadoConsulta = await conexao.query(
+            `SELECT id_produto, quantidade
+            FROM produto
+            WHERE id_produto = $1`,
+            [codigoProduto]
+        );
+
+        // Verifica se o produto existe.
+        if (resultadoConsulta.rows.length === 0) {
+
+            // Encerra a transação sem alterações.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
+
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Verifica se o produto possui estoque disponível.
+        if (resultadoConsulta.rows[0].quantidade === 0) {
+
+            // Encerra a transação sem alterações.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
+
+            await enviarMensagem(
+                "Estoque insuficiente",
+                "O produto não está disponível em estoque.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Verifica se a quantidade solicitada ultrapassa o saldo disponível.
+        if (quantidadeSaida > resultadoConsulta.rows[0].quantidade) {
+
+            // Encerra a transação sem alterações.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
+
+            await enviarMensagem(
+                "Estoque insuficiente",
+                "A quantidade solicitada excede o estoque disponível.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o código do produto consultado.
+        const codigoProdutoConsultado = resultadoConsulta.rows[0].id_produto;
+
+        // Atualiza o saldo somente quando houver estoque suficiente.
+        const resultadoUpdate = await conexao.query(
+            `UPDATE produto
+             SET quantidade = quantidade - $1
+             WHERE id_produto = $2
+               AND quantidade >= $1
+             RETURNING id_produto, quantidade`,
+            [quantidadeSaida, codigoProdutoConsultado]
+        );
+
+        // Verifica se o UPDATE conseguiu alterar o produto.
+        if (resultadoUpdate.rows.length === 0) {
+
+            // Encerra a transação sem confirmar a entrada.
+            await conexao.query("ROLLBACK");
+            transacaoAberta = false;
+
+            await enviarMensagem(
+                "Saída não realizada",
+                "O produto não pôde ser atualizado. Verifique se existe e se a quantidade ultrapassa o limite do estoque.",
+                400,
+                resposta
+            );
+            return;
+        }
+
+        // Recupera os valores retornados pelo UPDATE.
+        const codigoAtualizado = resultadoUpdate.rows[0].id_produto;
+        const estoqueAtualizado = resultadoUpdate.rows[0].quantidade;
+
+        // Registra o histórico da saída de estoque.
+        await conexao.query(
+            `INSERT INTO movimentacao_estoque
+                (id_produto, tipo, quantidade, observacao)
+             VALUES
+                ($1, 'S', $2, $3)`,
+            [
+                codigoAtualizado,
+                quantidadeSaida,
+                observacao || null
+            ]
+        );
+
+        // Indica que vamos tentar confirmar a transação.
+        commitIniciado = true;
+
+        // Confirma o UPDATE e o INSERT juntos.
+        await conexao.query("COMMIT");
+
+        // Marca a transação como encerrada e confirmada.
+        transacaoAberta = false;
+        gravacaoConfirmada = true;
+
+        // Monta os dados exibidos na confirmação.
+        const dadosAtualizacao = `
+            <p>Código do produto: ${escaparHtml(codigoAtualizado)}</p>
+            <p>Quantidade de saída: ${escaparHtml(quantidadeSaida)}</p>
+            <p>Estoque atualizado: ${escaparHtml(estoqueAtualizado)}</p>
+            <p>
+                <a href="/produtos/consultar?codigo=${codigoAtualizado}">
+                    Consultar produto atualizado
+                </a>
+            </p>
+        `;
+
+        // Substitui o marcador pelos dados atualizados.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // Envia a confirmação ao navegador.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra o erro original no terminal.
+        console.error("Erro ao registrar saída de estoque:", erro);
+
+        // Se o COMMIT começou, não sabemos necessariamente
+        // se a gravação foi confirmada quando ocorre uma falha.
+        if (commitIniciado && !gravacaoConfirmada) {
+
+            // Evita reutilizar uma conexão em estado incerto.
+            descartarConexao = true;
+        }
+
+        // Tenta desfazer a transação que ainda estiver aberta.
+        if (conexao && transacaoAberta && !gravacaoConfirmada) {
+
+            try {
+
+                await conexao.query("ROLLBACK");
+
+                // O ROLLBACK foi executado.
+                transacaoAberta = false;
+
+            } catch (erroRollback) {
+
+                // Não reutiliza a conexão se o ROLLBACK falhar.
+                descartarConexao = true;
+
+                console.error(
+                    "Erro ao desfazer transação:",
+                    erroRollback.message
+                );
+            }
+        }
+
+        // Se a resposta já começou, não envia outra página HTTP.
+        if (resposta.headersSent) {
+
+            // Finaliza a resposta somente se ainda estiver aberta.
+            if (!resposta.writableEnded) {
+                resposta.end();
+            }
+
+            return;
+        }
+
+        // Se houve falha durante o COMMIT, o resultado pode ser incerto.
+        if (commitIniciado && !gravacaoConfirmada) {
+
+            await enviarMensagem(
+                "Não foi possível confirmar o resultado",
+                "Verifique o saldo e o histórico do produto antes de tentar novamente.",
+                500,
+                resposta
+            );
+
+        } else if (gravacaoConfirmada) {
+
+            // O banco confirmou a operação, mas ocorreu
+            // algum erro posterior, como na resposta HTML.
+            await enviarMensagem(
+                "Saída registrada",
+                "A saída foi gravada, mas ocorreu um problema ao apresentar a confirmação.",
                 500,
                 resposta
             );
@@ -1943,15 +2381,27 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         return;
 
     // Abre o formulário de entrada de estoque com os produtos cadastrados.
-    } else if (caminho === "/estoque/novo" && metodo === "GET") {
+    } else if (caminho === "/estoque/novo/Entrada" && metodo === "GET") {
 
         await mostrarFormularioEntradaEstoque(requisicao, resposta);
         return;
 
+     // Abre o formulário de saída de estoque com os produtos cadastrados.
+    } else if (caminho === "/estoque/novo/Saida" && metodo === "GET") {
+
+        await mostrarFormularioSaidaEstoque(requisicao, resposta);
+        return;
+
         // Abre o formulário de atualização de entrada de estoque.
-    } else if (caminho === "/estoque/atualizar" && metodo === "POST") {
+    } else if (caminho === "/estoque/entrada" && metodo === "POST") {
 
         await atualizarEntradaEstoque(requisicao, resposta);
+        return;
+
+        // Abre o formulário de atualização de saída de estoque.
+    } else if (caminho === "/estoque/saida" && metodo === "POST") {
+
+        await atualizarSaidaEstoque(requisicao, resposta);
         return;
 
     } else if (caminho === "/estoque/movimentacoes" && metodo === "GET") {
