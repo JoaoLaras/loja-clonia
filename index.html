@@ -21,6 +21,18 @@
     </p>
 
     <p>
+        <a href="/produtos/novo">Cadastrar produto</a>
+    </p>
+
+    <p>
+        <a href="/produtos/consulta">Consultar produto</a>
+    </p>    
+
+    <p>
+        <a href="/produtos/pesquisar">Pesquisar produtos</a>
+    </p>    
+
+    <p>
         <a href="/produtos">Listar produtos</a>
     </p>
 
@@ -36,85 +48,17 @@
     <p>
         <a href="/estoque/movimentacoes">Histórico de Movimentações de Estoque</a>
     </p>
-
+    <p>
+        <a href="/clientes/novo">Cadastrar cliente</a>
+    </p>
+   
     <p>
         <a href="/clientes">Listar clientes</a>
     </p>
 
     <p>
-        <a href="/clientes/novo">Cadastrar cliente</a>
+        <a href="/precos/novo">Cadastrar preço</a>
     </p>
-
-    <hr>
-
-    <h2>Pesquisa de produtos</h2>
-
-    <!-- Envia os filtros de produtos pela URL utilizando GET. -->
-    <form action="/produtos" method="GET">
-
-        <p>
-            <label for="modeloFiltro">Modelo:</label>
-            <input id="modeloFiltro" name="modelo" type="text">
-        </p>
-
-        <p>
-            <label for="corFiltro">Cor:</label>
-            <input id="corFiltro" name="cor" type="text">
-        </p>
-
-        <p>
-            <label for="tamanhoFiltro">Tamanho:</label>
-            <select id="tamanhoFiltro" name="tamanho">
-                <option value="">Todos</option>
-                <!-- OPCOES_TAMANHO_FILTRO -->
-            </select>
-        </p>
-
-        <button type="submit">Pesquisar produtos</button>
-    </form>
-
-    <hr>
-
-    <h2>Consulta de produto por código</h2>
-
-    <!-- Envia o código do produto pela URL utilizando GET. -->
-    <form action="/produtos/consultar" method="GET">
-
-        <p>
-            <label for="codigo">Código do produto:</label>
-            <input id="codigo" name="codigo" type="text">
-        </p>
-
-        <button type="submit">Consultar produto</button>
-    </form>
-
-    <hr>
-
-    <h2>Cadastro de produto</h2>
-
-    <!-- Envia os dados do produto no corpo da requisição utilizando POST. -->
-    <form action="/produtos/cadastrar" method="POST">
-
-        <p>
-            <label for="modelo">Modelo:</label>
-            <input id="modelo" name="modelo" type="text" required>
-        </p>
-
-        <p>
-            <label for="tamanho">Tamanho:</label>
-            <select id="tamanho" name="tamanho" required>
-                <option value="">Selecione</option>
-                <!-- OPCOES_TAMANHO_CADASTRO -->
-            </select>
-        </p>
-
-        <p>
-            <label for="cor">Cor:</label>
-            <input id="cor" name="cor" type="text" required>
-        </p>
-
-        <button type="submit">Cadastrar produto</button>
-    </form>
 
 </body>
 </html>

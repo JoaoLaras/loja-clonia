@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Cadastro de Preco</title>
+</head>
+<body>
+
+    <h2>Cadastro de preco</h2>
+
+    <!-- Envia os dados do produto no corpo da requisição utilizando POST. -->
+    <form action="/precos/cadastrar" method="POST">
+
+        <p>
+            <label for="modelo">Modelo:</label>
+            <input id="modelo" name="modelo" type="text" required>
+        </p>
+
+        <p>
+            <label for="tamanho">Tamanho:</label>
+            <select id="tamanho" name="tamanho">
+                <option value="">Todos os tamanhos (Preço Geral)</option>
+                <!-- OPCOES_TAMANHO_CADASTRO -->
+            </select>
+        </p>
+
+        <p>
+            <label for="precoAvista">Preço à Vista:</label>
+            <input id="precoAvista" name="precoVista" type="number" step="0.01"  min="0" required>
+        </p>
+
+        <p>
+            <label for="precoPrazo">Preço a Prazo:</label>
+            <input id="precoPrazo" name="precoPrazo" type="number" step="0.01" min="0" required>
+        </p>
+
+        <button type="submit">Cadastrar preco</button>
+    </form>
+
+    <!-- Retorna à listagem de produtos. -->
+    <p>
+        <a href="/produtos">Listar produtos</a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
+</html>

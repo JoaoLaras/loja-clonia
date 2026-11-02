@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Loja Clonia - Consultar Produto</title>
+</head>
+<body>
+
+    <h1>Consulta de produto por código</h1>
+
+    <form action="/produtos/consultar" method="GET">
+
+        <label for="codigo">Código do produto:</label>
+        <input type="number" id="codigo" name="codigo" min="1" required>
+
+        <button type="submit">Consultar produto</button>
+
+    </form>
+
+    <p><a href="/">Voltar ao início</a></p>
+
+</body>
+</html>

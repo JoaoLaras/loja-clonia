@@ -2288,6 +2288,377 @@ async function listarMovimentacoesEstoque(requisicao, resposta) {
     }
 }
 
+// Consulta um produto pelo código informado na URL.
+async function consultarProduto(requisicao, resposta) {
+
+    // Interpreta a URL para acessar seus parâmetros.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém o código informado e remove espaços das extremidades.
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+    // Verifica se o código foi informado.
+    if (codigoRecebido === "") {
+
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do produto.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Converte o código recebido para número.
+    const codigoPesquisado = Number(codigoRecebido);
+
+    // Verifica se o código é um inteiro positivo dentro do limite do PostgreSQL.
+    if (!Number.isSafeInteger(codigoPesquisado) ||
+        codigoPesquisado <= 0 ||
+        codigoPesquisado > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Consulta o produto utilizando um parâmetro SQL.
+        const resultado = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+             FROM produto
+             WHERE id_produto = $1`,
+            [codigoPesquisado]
+        );
+
+        // Verifica se o produto foi encontrado.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o primeiro registro retornado pela consulta.
+        const produtoEncontrado = resultado.rows[0];
+
+        // Monta os dados que serão apresentados no HTML.
+        const dadosProduto = `
+            <p>Código: ${escaparHtml(produtoEncontrado.id_produto)}</p>
+            <p>Modelo: ${escaparHtml(produtoEncontrado.modelo)}</p>
+            <p>Tamanho: ${escaparHtml(produtoEncontrado.tamanho)}</p>
+            <p>Cor: ${escaparHtml(produtoEncontrado.cor)}</p>
+            <p>Quantidade: ${escaparHtml(produtoEncontrado.quantidade)}</p>
+        `;
+
+        // Carrega a página de consulta do produto.
+        const caminhoHtml = path.join(__dirname, "produto-consulta.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Insere os dados e o código do produto nos marcadores.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- DADOS_PRODUTO -->", () => dadosProduto)
+            .replaceAll(
+                "<!-- CODIGO_PRODUTO -->",
+                () => escaparHtml(produtoEncontrado.id_produto)
+            );
+
+        // Envia a página preenchida ao navegador.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao consultar produto:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao consultar produto",
+            "Não foi possível consultar o produto.",
+            500,
+            resposta
+        );
+    }
+}
+
+// Cadastra um novo preco no banco de dados.
+async function cadastrarPreco(requisicao, resposta) {
+
+    // Lê os dados recebidos como texto UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo enviado pelo formulário.
+    let corpo = "";
+
+    for await (const parteCadastro of requisicao) {
+        corpo += parteCadastro;
+    }
+
+    // Interpreta os dados enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém os campos e remove espaços das extremidades.
+    const modelo = (dados.get("modelo")         || "").trim();
+    const tamanho = (dados.get("tamanho")       || "").trim();
+    const precoVista = (dados.get("precoVista") || "").trim();
+    const precoPrazo = (dados.get("precoPrazo") || "").trim();
+
+    // Verifica se os campos obrigatórios foram preenchidos.
+    if (modelo === "" || precoVista === "" || precoPrazo === "") {
+
+        await enviarMensagem(
+            "Campos obrigatórios",
+            "Informe modelo e preços.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Padroniza o tamanho para letras maiúsculas.
+    const tamanhoPadronizado = tamanho.toUpperCase();
+    if (tamanhoPadronizado !== "") {
+        // Verifica se o tamanho pertence à lista permitida.
+        if (!tamanhosPermitidos.includes(tamanhoPadronizado)) {
+
+            await enviarMensagem(
+                "Tamanho inválido",
+                "Use P, M, G, GG ou 40, 42, 44, 46, 48, 50, 52, 54.",
+                400,
+                resposta
+            );
+            return;
+        }
+    }
+
+    // Converte o tamanho vazio em NULL para o PostgreSQL.
+    const tamanhoBanco = tamanhoPadronizado === "" ? null : tamanhoPadronizado;
+
+
+    // Verifica se o preço possui formato decimal válido.
+    const formatoPreco = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
+
+    if (!formatoPreco.test(precoVista) ||
+        !formatoPreco.test(precoPrazo)) {
+
+        await enviarMensagem(
+            "Preço inválido",
+            "Informe preços válidos, não negativos e com até duas casas decimais.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Carrega a página de confirmação do cadastro de preço.
+        const caminhoHtml = path.join(__dirname, "preco-cadastro-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Insere o preço no banco de dados.
+        const resultado = await banco.query(
+            `INSERT INTO preco_produto (modelo, tamanho, preco_vista, preco_prazo)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id_preco`,
+            [modelo, tamanhoBanco, precoVista, precoPrazo]
+        );
+
+        // Obtém o código gerado pelo PostgreSQL.
+        const codigoCriado = resultado.rows[0].id_preco;
+
+        // Monta a confirmação do cadastro do preço.
+        const dadosCadastro = `
+            <p>Código do preço: ${escaparHtml(codigoCriado)}</p>
+            <p>Preço cadastrado com sucesso.</p>
+            <p>
+                <a href="/precos/novo">Cadastrar outro preço</a>
+            </p>
+        `;
+
+        // Substitui o marcador da página pelos dados do cadastro.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_CADASTRO -->",
+            () => dadosCadastro
+        );
+
+        // Retorna HTTP 201 informando que o produto foi criado.
+        resposta.writeHead(201, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Trata a violação da restrição UNIQUE do banco.
+        if (erro.code === "23505") {
+
+            await enviarMensagem(
+                "Preço duplicado",
+                "Já existe um preço cadastrado para esse modelo e tamanho.",
+                409,
+                resposta
+            );
+            return;
+        }
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao cadastrar preço:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao cadastrar preço",
+            "Não foi possível cadastrar o preço.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
+// Consulta os preços de um produto pelo código informado
+async function consultarPrecoProduto(requisicao, resposta) {
+
+    // Interpreta a URL para acessar seus parâmetros.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém o código informado e remove espaços das extremidades.
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+    // Verifica se o código foi informado.
+    if (codigoRecebido === "") {
+
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do produto.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Converte o código recebido para número.
+    const codigoPesquisado = Number(codigoRecebido);
+
+    // Verifica se o código é um inteiro positivo dentro do limite do PostgreSQL.
+    if (!Number.isSafeInteger(codigoPesquisado) ||
+        codigoPesquisado <= 0 ||
+        codigoPesquisado > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Consulta o produto utilizando um parâmetro SQL.
+        const resultado = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+             FROM produto
+             WHERE id_produto = $1`,
+            [codigoPesquisado]
+        );
+
+        // Verifica se o produto foi encontrado.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Produto não encontrado",
+                "Nenhum produto foi encontrado para o código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Armazena o produto encontrado.
+        const produtoEncontrado = resultado.rows[0];
+
+        // Consulta o preço específico ou geral do produto.
+        const resultadoPrecoVenda = await banco.query(
+            `SELECT *
+            FROM preco_produto
+            WHERE modelo = $1
+            AND (tamanho = $2 OR tamanho IS NULL)
+            ORDER BY
+                CASE
+                    WHEN tamanho = $2 THEN 1
+                    ELSE 2
+                END
+            LIMIT 1`,
+            [produtoEncontrado.modelo, produtoEncontrado.tamanho]
+        );
+
+        // Verifica se foi encontrado um preço para o produto.
+        if (resultadoPrecoVenda.rows.length === 0) {
+
+            await enviarMensagem(
+                "Preço não encontrado",
+                "Nenhum preço foi encontrado para o produto informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+        
+        // Armazena o preço encontrado.
+        const precoEncontrado = resultadoPrecoVenda.rows[0];
+        
+        // Carrega a estrutura HTML da consulta de preços.
+        const caminhoHtml = path.join(__dirname, "preco-consulta.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelos dados do produto e seus preços.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_PRECO_PRODUTO -->",
+            () => `
+                <p><strong>Código:</strong> ${produtoEncontrado.id_produto}</p>
+                <p><strong>Modelo:</strong> ${escaparHtml(produtoEncontrado.modelo)}</p>
+                <p><strong>Tamanho:</strong> ${escaparHtml(produtoEncontrado.tamanho)}</p>
+                <p><strong>Cor:</strong> ${escaparHtml(produtoEncontrado.cor)}</p>
+                <p><strong>Preço à Vista:</strong> R$ ${Number(precoEncontrado.preco_vista).toFixed(2).replace(".", ",")}</p>
+                <p><strong>Preço a Prazo:</strong> R$ ${Number(precoEncontrado.preco_prazo).toFixed(2).replace(".", ",")}</p>
+            `
+        );
+
+        // Envia a página com o Preco.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao consultar preço:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao consultar preço",
+            "Não foi possível consultar o preço do produto.",
+            500,
+            resposta
+        );
+    }
+}
+
 
 
 //Fim das funções do servidor HTTP
@@ -2314,6 +2685,18 @@ const servidor = http.createServer(async (requisicao, resposta) => {
         await enviarPaginaHtml("index.html", resposta);
         return;
 
+
+    // Cadastra um novo produto.
+    } else if (caminho === "/produtos/novo" && metodo === "GET") {
+
+        await enviarPaginaHtml("produto-cadastro.html", resposta);
+        return;
+
+    // Abre o formulário de consulta de produtos.
+    } else if (caminho === "/produtos/consulta" && metodo === "GET") {
+        await enviarPaginaHtml("produto-consultar.html", resposta);
+        return;
+
     // Cadastra um novo produto.
     } else if (caminho === "/produtos/cadastrar" && metodo === "POST") {
 
@@ -2324,6 +2707,11 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     } else if (caminho === "/produtos/consultar" && metodo === "GET") {
 
         await consultarProduto(requisicao, resposta);
+        return;
+
+    // Abre o formulário de pesquisa de produtos.
+    } else if (caminho === "/produtos/pesquisar" && metodo === "GET") {
+        await enviarPaginaHtml("produto-pesquisar.html", resposta);
         return;
 
     // Lista os produtos cadastrados, aplicando os filtros.
@@ -2407,6 +2795,23 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     } else if (caminho === "/estoque/movimentacoes" && metodo === "GET") {
         
         await listarMovimentacoesEstoque(requisicao, resposta);
+        return;
+    
+    // Cadastra um novo preco.
+    } else if (caminho === "/precos/novo" && metodo === "GET") {
+
+        await enviarPaginaHtml("preco-cadastro.html", resposta);
+        return;
+
+     // Cadastra um novo preco.
+    } else if (caminho === "/precos/cadastrar" && metodo === "POST") {
+
+        await cadastrarPreco(requisicao, resposta);
+        return;
+
+    // Consulta os preços de um produto.
+    } else if (caminho === "/precos/consultar" && metodo === "GET") {
+        await consultarPrecoProduto(requisicao, resposta);
         return;
 
     // Abre a página Sobre.

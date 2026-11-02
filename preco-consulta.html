@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Loja Clonia - Pesquisar Produtos</title>
+</head>
+<body>
+
+    <h1>Pesquisa de produtos</h1>
+
+    <form action="/produtos" method="GET">
+
+        <p>
+            <label for="modelo">Modelo:</label>
+            <input type="text" id="modelo" name="modelo">
+        </p>
+
+        <p>
+            <label for="cor">Cor:</label>
+            <input type="text" id="cor" name="cor">
+        </p>
+
+        <p>
+            <label for="tamanho">Tamanho:</label>
+            <select id="tamanho" name="tamanho">
+                <option value="">Todos</option>
+                <!-- OPCOES_TAMANHO_FILTRO -->
+            </select>
+        </p>
+
+        <button type="submit">Pesquisar produtos</button>
+
+    </form>
+
+    <p><a href="/">Voltar ao início</a></p>
+
+</body>
+</html>
