@@ -2659,6 +2659,406 @@ async function consultarPrecoProduto(requisicao, resposta) {
     }
 }
 
+// Lista os preços dos produtos cadastrados aplicando os filtros informados.
+async function listarPrecos(requisicao, resposta) {
+
+    // Interpreta a URL para acessar os filtros da pesquisa.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém os filtros enviados pelo navegador.
+    const modeloFiltro = (endereco.searchParams.get("modelo") || "").trim();
+    const tamanhoFiltro = (endereco.searchParams.get("tamanho") || "").trim().toUpperCase();
+    const precoAvista = (endereco.searchParams.get("precoAvista") || "").trim();
+    const precoAPrazo = (endereco.searchParams.get("precoAPrazo") || "").trim();
+
+    // Verifica se o preço à vista informado possui um formato válido.
+    if (precoAvista !== "" && !/^\d+(\.\d{1,2})?$/.test(precoAvista)) {
+
+        await enviarMensagem(
+            "Preço à vista inválido",
+            "Informe um preço válido, com até duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    // Verifica se o preço à prazo informado possui um formato válido.
+    if (precoAPrazo !== "" && !/^\d+(\.\d{1,2})?$/.test(precoAPrazo)) {
+
+        await enviarMensagem(
+            "Preço à prazo inválido",
+            "Informe um preço válido, com até duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    // Verifica se o preço à vista possui formato e tamanho válidos.
+    if (precoAvista !== "" &&
+        !/^\d{1,10}(\.\d{1,2})?$/.test(precoAvista)) {
+
+        await enviarMensagem(
+            "Preço à vista inválido",
+            "Informe um preço válido, com até 10 dígitos inteiros e duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+        // Verifica se o preço à prazo possui formato e tamanho válidos.
+    if (precoAPrazo !== "" &&
+        !/^\d{1,10}(\.\d{1,2})?$/.test(precoAPrazo)) {
+
+        await enviarMensagem(
+            "Preço à prazo inválido",
+            "Informe um preço válido, com até 10 dígitos inteiros e duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    try {
+
+        // Consulta os preços dos produtos utilizando filtros parametrizados.
+        const resultado = await banco.query(
+            `SELECT id_preco, modelo, tamanho, preco_vista, preco_prazo
+            FROM preco_produto
+            WHERE modelo ILIKE $1
+            AND ($2::TEXT = '' OR tamanho = $2)
+            AND ($3::TEXT = '' OR preco_vista = NULLIF($3::TEXT, '')::NUMERIC)
+            AND ($4::TEXT = '' OR preco_prazo = NULLIF($4::TEXT, '')::NUMERIC)
+            ORDER BY id_preco`,
+            [
+                "%" + modeloFiltro + "%",
+                tamanhoFiltro,
+                precoAvista,
+                precoAPrazo
+            ]
+        );
+
+        // Acumula as linhas que serão inseridas na tabela HTML.
+        let listaPrecos = "";
+
+        // Monta uma mensagem quando nenhum preço for encontrado.
+        if (resultado.rows.length === 0) {
+
+            listaPrecos = `
+                <tr>
+                    <td colspan="5">
+                        Nenhum preço encontrado para a pesquisa.
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Define a formatação monetária brasileira.
+        const formatadorMoeda = new Intl.NumberFormat("pt-BR", {
+            style: "currency",
+            currency: "BRL"
+        });
+
+        // Percorre os preços retornados pelo banco.
+        for (const preco of resultado.rows) {
+
+            // Monta uma linha da tabela para cada preço.
+            listaPrecos += `
+                <tr>
+
+                    <td>
+                        <a href="/precos/editar?codigo=${preco.id_preco}">
+                            ${escaparHtml(preco.id_preco)}
+                        </a>
+                    </td>
+                    <td>${escaparHtml(preco.modelo)}</td>
+                    <td>${escaparHtml(preco.tamanho ?? "Geral")}</td>
+                    <td>${escaparHtml(formatadorMoeda.format(preco.preco_vista))}</td>
+                    <td>${escaparHtml(formatadorMoeda.format(preco.preco_prazo))}</td>
+                </tr>
+            `;
+        }
+
+        // Carrega a estrutura HTML da listagem de preços.
+        const caminhoHtml = path.join(__dirname, "preco-listagem.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelas linhas montadas.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- LINHAS_PRECOS -->",
+            () => listaPrecos
+        );
+
+        // Envia a página com os preços.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao listar preços:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao listar preços",
+            "Não foi possível listar os preços.",
+            500,
+            resposta
+        );
+    }
+}
+
+// Carrega o formulário de edição de um preco.
+async function mostrarFormularioEdicaoPreco(requisicao, resposta) {
+
+    // Interpreta a URL para acessar o código do produto.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém o código enviado pelo navegador.
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+    // Verifica se o código foi informado.
+    if (codigoRecebido === "") {
+
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do preço.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Converte o código para número.
+    const codigoPesquisado = Number(codigoRecebido);
+
+    // Verifica se o código é válido para o campo INTEGER.
+    if (!Number.isSafeInteger(codigoPesquisado) ||
+        codigoPesquisado <= 0 ||
+        codigoPesquisado > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Consulta os dados do preço que será editado.
+        const resultado = await banco.query(
+            `SELECT id_preco, modelo, tamanho, preco_vista, preco_prazo
+             FROM preco_produto
+             WHERE id_preco = $1`,
+            [codigoPesquisado]
+        );
+
+        // Verifica se o preço existe.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Preço não encontrado",
+                "Nenhum preço corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém os dados do preço encontrado.
+        const precoEncontrado = resultado.rows[0];
+
+        // Carrega a página de edição.
+        const caminhoHtml = path.join(__dirname, "preco-editar.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Preenche o formulário com os valores atuais do preço.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- MODELO_PRECO -->", () => escaparHtml(precoEncontrado.modelo))
+            .replace("<!-- TAMANHO_PRECO -->", () => escaparHtml(precoEncontrado.tamanho ?? "Geral"))
+            .replace("<!-- PRECO_VISTA -->", () => escaparHtml(precoEncontrado.preco_vista))
+            .replace("<!-- PRECO_PRAZO -->", () => escaparHtml(precoEncontrado.preco_prazo))
+            .replaceAll(
+                "<!-- CODIGO_PRECO -->",
+                () => escaparHtml(precoEncontrado.id_preco)
+            );
+
+        // Envia a página de edição ao navegador.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao abrir edição do preço:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao editar preço",
+            "Não foi possível carregar os dados do preço.",
+            500,
+            resposta
+        );
+    }
+}
+
+// Atualiza os dados de um preço existente.
+async function atualizarPreco(requisicao, resposta) {
+
+    // Lê os dados enviados pelo formulário em UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo recebido na requisição.
+    let corpo = "";
+
+    for await (const dadosAtualiza of requisicao) {
+        corpo += dadosAtualiza;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém e converte o código do preço.
+    const codigoRecebido = (dados.get("codigo") || "").trim();
+    const codigoPreco = Number(codigoRecebido);
+
+    // Verifica se o código é um inteiro válido.
+    if (!Number.isSafeInteger(codigoPreco) ||
+        codigoPreco <= 0 ||
+        codigoPreco > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Obtém os campos que serão atualizados.
+    const preco_vista = (dados.get("preco_vista") || "").trim();
+    const preco_prazo = (dados.get("preco_prazo") || "").trim();
+
+    // Verifica se os campos obrigatórios foram preenchidos.
+    if (preco_vista === "" || preco_prazo === "") {
+
+        await enviarMensagem(
+            "Campos obrigatórios",
+            "Informe os preços à vista e a prazo.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Verifica se o preço à vista possui formato e tamanho válidos.
+    if (!/^\d{1,10}(\.\d{1,2})?$/.test(preco_vista)) {
+
+        await enviarMensagem(
+            "Preço à vista inválido",
+            "Informe um preço válido, com até 10 dígitos inteiros e duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    // Verifica se o preço a prazo possui formato e tamanho válidos.
+    if (!/^\d{1,10}(\.\d{1,2})?$/.test(preco_prazo)) {
+
+        await enviarMensagem(
+            "Preço a prazo inválido",
+            "Informe um preço válido, com até 10 dígitos inteiros e duas casas decimais.",
+            400,
+            resposta
+        );
+
+        return;
+    }
+
+    try {
+
+        // Carrega a página de confirmação da atualização do preço.
+        const caminhoHtml = path.join(__dirname, "preco-atualizacao-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Atualiza o preço identificado pelo código.
+        const resultado = await banco.query(
+            `UPDATE preco_produto
+             SET preco_vista = $1,
+                 preco_prazo = $2
+             WHERE id_preco = $3
+             RETURNING id_preco`,
+            [preco_vista, preco_prazo, codigoPreco]
+        );
+
+        // Verifica se algum registro foi atualizado.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Preço não encontrado",
+                "Nenhum preço corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o código do preço atualizado.
+        const codigoAtualizado = resultado.rows[0].id_preco;
+
+        // Monta a confirmação com um link para a listagem de preços.
+        const dadosAtualizacao = `
+            <p>Código do preço: ${escaparHtml(codigoAtualizado)}</p>
+            <p>
+                <a href="/precos">
+                    Voltar à listagem de preços
+                </a>
+            </p>
+        `;
+
+        // Insere os dados da atualização na página de confirmação.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // Retorna HTTP 200 informando que a atualização foi realizada.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao atualizar preço:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao atualizar preço",
+            "Não foi possível atualizar o preço.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
 
 
 //Fim das funções do servidor HTTP
@@ -2812,6 +3212,27 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     // Consulta os preços de um produto.
     } else if (caminho === "/precos/consultar" && metodo === "GET") {
         await consultarPrecoProduto(requisicao, resposta);
+        return;
+
+    // Lista os precos cadastrados, aplicando os filtros.
+    } else if (caminho === "/precos" && metodo === "GET") {
+
+        await listarPrecos(requisicao, resposta);
+        return;
+
+    } else if (caminho === "/precos/pesquisar" && metodo === "GET") {
+        await enviarPaginaHtml("preco-pesquisar.html", resposta);
+    return;
+
+     // Abre o formulário de edição do produto.
+    } else if (caminho === "/precos/editar" && metodo === "GET") {
+
+        await mostrarFormularioEdicaoPreco(requisicao, resposta);
+        return;
+
+     } else if (caminho === "/precos/atualizar" && metodo === "POST") {
+
+        await atualizarPreco(requisicao, resposta);
         return;
 
     // Abre a página Sobre.

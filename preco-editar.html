@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Edição de Preço</title>
+</head>
+<body>
+
+    <h1>Edição de Preço - Código <!-- CODIGO_PRECO --></h1>
+
+    <!-- Envia os dados alterados para atualização do preço. -->
+    <form action="/precos/atualizar" method="POST">
+
+        <!-- Envia o código do preço sem exibi-lo no formulário. -->
+        <input
+            type="hidden"
+            name="codigo"
+            value="<!-- CODIGO_PRECO -->"
+        >
+
+        <p>
+            <label for="modelo">Modelo:</label >
+            <input
+                id="modelo"
+                name="modelo"
+                type="text"
+                value="<!-- MODELO_PRECO -->"
+                required
+            readonly>
+        </p>
+
+        <p>
+            <label for="tamanho">Tamanho:</label>
+            <input
+                id="tamanho"
+                type="text"
+                value="<!-- TAMANHO_PRECO -->"
+                readonly
+            >
+        </p>
+
+        <p>
+            <label for="preco_vista">Preço à Vista:</label>
+            <input
+                id="preco_vista"
+                name="preco_vista"
+                type="number"
+                min="0"
+                step="0.01"
+                value="<!-- PRECO_VISTA -->"
+                required
+            >
+        </p>
+
+        <p>
+            <label for="preco_prazo">Preço a Prazo:</label>
+            <input
+                id="preco_prazo"
+                name="preco_prazo"
+                type="number"
+                min="0"
+                step="0.01"
+                value="<!-- PRECO_PRAZO -->"
+                required
+            >
+        </p>
+
+        <button type="submit">Salvar alterações</button>
+    </form>
+
+    <!-- Retorna à consulta do preço sem salvar alterações. -->
+    <p>
+        <a href="/precos">
+            Cancelar edição
+        </a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
+</html>

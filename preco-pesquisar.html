@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Loja Clonia - Pesquisar preços</title>
+</head>
+<body>
+
+    <h1>Pesquisa de preços</h1>
+
+    <form action="/precos" method="GET">
+
+        <p>
+            <label for="modelo">Modelo:</label>
+            <input type="text" id="modelo" name="modelo">
+        </p>
+
+        <p>
+            <label for="tamanho">Tamanho:</label>
+            <select id="tamanho" name="tamanho">
+                <option value="">Todos</option>
+                <!-- OPCOES_TAMANHO_FILTRO -->
+            </select>
+        </p>
+
+        <p>
+            <label for="precoAvista">Preço à Vista:</label>
+            <input type="number" id="precoAvista" name="precoAvista" step="0.01">
+        </p>
+
+        <p>
+            <label for="precoAPrazo">Preço à Prazo:</label>
+            <input type="number" id="precoAPrazo" name="precoAPrazo" step="0.01">
+        </p>
+
+        <button type="submit">Pesquisar preços</button>
+
+    </form>
+
+    <p>
+        <a href="/precos">Listar preços</a>
+    </p>
+
+    <p><a href="/">Voltar ao início</a></p>
+
+</body>
+</html>
