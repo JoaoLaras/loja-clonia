@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Cadastro de Tipo de Pagamento</title>
+</head>
+<body>
+
+    <h2>Cadastro de pagamento</h2>
+
+    <!-- Envia os dados do pagamento no corpo da requisição utilizando POST. -->
+    <form action="/tipos-pagamentos/cadastrar" method="POST">
+
+        <p>
+            <label for="descricao">Descrição:</label>
+            <input id="descricao" name="descricao" type="text" required>
+        </p>
+
+        <p>
+            <label for="categoria">Categoria:</label>
+            <select id="categoria" name="categoria" required>
+                <option value="">Selecione</option>
+                <!-- OPCOES_CATEGORIA_CADASTRO -->
+            </select>
+        </p>
+
+    <button type="submit">Cadastrar tipo de pagamento</button>
+    </form>
+
+    <!-- Retorna à listagem de produtos. -->
+    <p>
+        <a href="/tipos-pagamentos">Listar tipos de pagamento</a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
+</html>

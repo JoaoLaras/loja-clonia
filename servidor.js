@@ -17,6 +17,11 @@ const tamanhosPermitidos = [
     "40", "42", "44", "46", "48", "50", "52", "54"
 ];
 
+// Lista compartilhada pelas funções do servidor.
+const categoriasPermitidas = [
+    "DINHEIRO", "PIX", "DEBITO", "CREDITO"
+];
+
 //Inicio das funções do servidor HTTP
 
 // Cadastra um novo produto no banco de dados.
@@ -2048,13 +2053,23 @@ async function enviarPaginaHtml(nomeArquivo, resposta) {
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
 
         // Acumula as opções de tamanho utilizadas nos formulários.
-        let opcoesTamanho = "";
+        let opcoesTamanho   = "";
+        let opcoesCategoria = "";
 
         for (const tamanho of tamanhosPermitidos) {
 
             opcoesTamanho += `
                 <option value="${escaparHtml(tamanho)}">
                     ${escaparHtml(tamanho)}
+                </option>
+            `;
+        }
+
+        for (const categoria of categoriasPermitidas) {
+
+            opcoesCategoria += `
+                <option value="${escaparHtml(categoria)}">
+                    ${escaparHtml(categoria)}
                 </option>
             `;
         }
@@ -2068,6 +2083,10 @@ async function enviarPaginaHtml(nomeArquivo, resposta) {
             .replace(
                 "<!-- OPCOES_TAMANHO_FILTRO -->",
                 () => opcoesTamanho
+            )
+            .replace(
+                "<!-- OPCOES_CATEGORIA_CADASTRO -->",
+                () => opcoesCategoria
             );
 
         // Envia a página HTML ao navegador.
@@ -3060,6 +3079,500 @@ async function atualizarPreco(requisicao, resposta) {
     }
 }
 
+// Cadastra um novo tipo de pagamento no banco de dados.
+async function cadastrarTipoPagamento(requisicao, resposta) {
+
+    // Lê os dados recebidos como texto UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo enviado pelo formulário.
+    let corpo = "";
+
+    for await (const parteCadastro of requisicao) {
+        corpo += parteCadastro;
+    }
+
+    // Interpreta os dados enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém os campos e remove espaços das extremidades.
+    const descricao = (dados.get("descricao")         || "").trim();
+    const categoria = (dados.get("categoria")         || "").trim();
+
+    if (descricao === "" || categoria === "") {
+
+        await enviarMensagem("Campos obrigatórios",
+            "Informe a descrição e a categoria do tipo de pagamento.",
+            400,    
+            resposta
+        );
+        return;
+    }
+
+    if (descricao.length > 50) {
+
+        await enviarMensagem(
+            "Descrição muito longa",
+            "A descrição não pode exceder 50 caracteres.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Padroniza a categoria para letras maiúsculas.
+    const categoriaPadronizada = categoria.toUpperCase();
+
+    // Padroniza a descrição, removendo acentos e convertendo para maiúsculas.
+    const descricaoPadronizada = descricao
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase();
+
+    // Percorre as categorias permitidas.
+    for (const categoriaLista of categoriasPermitidas) {
+
+        if (descricaoPadronizada.includes(categoriaLista) &&
+            categoriaPadronizada !== categoriaLista) {
+
+            await enviarMensagem(
+                "Categoria incompatível",
+                `A descrição corresponde à categoria ${categoriaLista}.`,
+                400,
+                resposta
+            );
+            return;
+        }
+    }
+
+    if (!categoriasPermitidas.includes(categoriaPadronizada)) {
+
+        await enviarMensagem(
+            "Categoria inválida",
+            "Use as categorias: DINHEIRO, PIX, DEBITO ou CREDITO.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Carrega a página de confirmação do cadastro de tipo de pagamento.
+        const caminhoHtml = path.join(__dirname, "tipo-pagamento-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Insere o tipo de pagamento no banco de dados.
+        const resultado = await banco.query(
+            `INSERT INTO tipo_pagamento (descricao, categoria)
+             VALUES ($1, $2)
+             RETURNING id_tipo_pagamento`,
+            [descricao, categoriaPadronizada]
+        );
+
+        // Obtém o código gerado pelo PostgreSQL.
+        const codigoCriado = resultado.rows[0].id_tipo_pagamento;
+
+        // Monta a confirmação do cadastro do tipo de pagamento.
+        const dadosCadastro = `
+            <p>Código do tipo de pagamento: ${escaparHtml(codigoCriado)}</p>
+            <p>Tipo de pagamento cadastrado com sucesso.</p>
+            <p>
+                <a href="/tipos-pagamento/novo">Cadastrar outro tipo de pagamento</a>
+            </p>
+        `;
+
+        // Substitui o marcador da página pelos dados do cadastro.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_CADASTRO -->",
+            () => dadosCadastro
+        );
+
+        // Retorna HTTP 201 informando que o tipo de pagamento foi criado.
+        resposta.writeHead(201, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Trata a violação da restrição UNIQUE do banco.
+        if (erro.code === "23505") {
+
+            await enviarMensagem(
+                "Tipo de pagamento duplicado",
+                "Já existe um tipo de pagamento cadastrado com essa descrição.",
+                409,
+                resposta
+            );
+            return;
+        }
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao cadastrar tipo de pagamento:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao cadastrar tipo de pagamento",
+            "Não foi possível cadastrar o tipo de pagamento.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
+async function listarTiposPagamento(requisicao, resposta) {
+
+    // Interpreta a URL para acessar os filtros da pesquisa.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém os filtros enviados pelo navegador.
+    const descricaoFiltro = (endereco.searchParams.get("descricao") || "").trim();
+    const categoriaFiltro = (endereco.searchParams.get("categoria") || "").trim().toUpperCase();
+    const situacaoFiltro = (endereco.searchParams.get("situacao") || "").trim();
+    
+    if (situacaoFiltro !== "" &&
+        situacaoFiltro !== "ativos" &&
+        situacaoFiltro !== "inativos") {
+
+        await enviarMensagem(
+            "Filtro de situação inválido",
+            "Situação inválida. Use 'ativos', 'inativos' ou deixe em branco para consultar todos.",
+            400,
+            resposta
+        );
+        return;
+    }
+    // Verifica se o categoria pertence à lista permitida.
+    if ( categoriaFiltro !== "" && !categoriasPermitidas.includes(categoriaFiltro)) {
+
+        await enviarMensagem(
+            "Categoria inválida",
+            "Use as categorias: DINHEIRO, PIX, DEBITO ou CREDITO.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        let situacaoFiltroConvertida = null;
+
+        if (situacaoFiltro === "ativos") {
+            situacaoFiltroConvertida = true;
+        } else if (situacaoFiltro === "inativos") {
+            situacaoFiltroConvertida = false;
+        }
+
+        // Consulta os tipos de pagamento utilizando filtros parametrizados.
+        const resultado = await banco.query(
+            `SELECT id_tipo_pagamento, descricao, ativo, categoria
+            FROM tipo_pagamento
+            WHERE descricao ILIKE $1
+            AND ($2::TEXT = '' OR categoria = $2)
+            AND ($3::BOOLEAN IS NULL OR ativo = $3::BOOLEAN)
+            ORDER BY id_tipo_pagamento`,
+            [
+                "%" + descricaoFiltro + "%",
+                categoriaFiltro,
+                situacaoFiltroConvertida
+            ]
+        );
+
+        // Acumula as linhas que serão inseridas na tabela HTML.
+        let listaTiposPagamento = "";
+
+        // Monta uma mensagem quando nenhum tipo de pagamento for encontrado.
+        if (resultado.rows.length === 0) {
+
+            listaTiposPagamento = `
+                <tr>
+                    <td colspan="4">
+                        Nenhum tipo de pagamento encontrado para a pesquisa.
+                    </td>
+                </tr>
+            `;
+        }
+
+
+        // Percorre os tipos de pagamento retornados pelo banco.
+        for (const tipoPagamento of resultado.rows) {
+
+            // Monta uma linha da tabela para cada tipo de pagamento.
+            listaTiposPagamento += `
+                <tr>
+
+                    <td>
+                        <a href="/tipos-pagamentos/editar?codigo=${tipoPagamento.id_tipo_pagamento}">
+                            ${escaparHtml(tipoPagamento.id_tipo_pagamento)}
+                        </a>
+                    </td>
+                    <td>${escaparHtml(tipoPagamento.descricao)}</td>
+                    <td>${escaparHtml(tipoPagamento.categoria)}</td>
+                    <td>${escaparHtml(tipoPagamento.ativo ? "Ativo" : "Inativo")}</td>
+                </tr>
+            `;
+        }
+
+        // Carrega a estrutura HTML da listagem de tipos de pagamento.
+        const caminhoHtml = path.join(__dirname, "tipo-pagamento-listagem.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Substitui o marcador pelas linhas montadas.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- LINHAS_TIPOS_PAGAMENTO -->",
+            () => listaTiposPagamento
+        );
+
+        // Envia a página com os tipos de pagamento.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao listar tipos de pagamento:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao listar tipos de pagamento",
+            "Não foi possível listar os tipos de pagamento.",
+            500,
+            resposta
+        );
+    }
+}
+
+
+// Carrega o formulário de edição de um tipo de pagamento.
+async function mostrarFormularioEdicaoTipoPagamento(requisicao, resposta) {
+
+    // Interpreta a URL para acessar o código do tipo de pagamento.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém o código enviado pelo navegador.
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+
+    // Verifica se o código foi informado.
+    if (codigoRecebido === "") {
+
+        await enviarMensagem(
+            "Código obrigatório",
+            "Informe o código do tipo de pagamento.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Converte o código para número.
+    const codigoPesquisado = Number(codigoRecebido);
+
+    // Verifica se o código é válido para o campo INTEGER.
+    if (!Number.isSafeInteger(codigoPesquisado) ||
+        codigoPesquisado <= 0 ||
+        codigoPesquisado > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    try {
+
+        // Consulta os dados do preço que será editado.
+        const resultado = await banco.query(
+            `SELECT id_tipo_pagamento, descricao, categoria, ativo
+             FROM tipo_pagamento
+             WHERE id_tipo_pagamento = $1`,
+            [codigoPesquisado]
+        );
+
+        // Verifica se o tipo de pagamento existe.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Tipo de pagamento não encontrado",
+                "Nenhum tipo de pagamento corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém os dados do tipo de pagamento encontrado.
+        const tipoPagamentoEncontrado = resultado.rows[0];
+
+        // Carrega a página de edição.
+        const caminhoHtml = path.join(__dirname, "tipo-pagamento-editar.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+        
+        // Preenche o formulário com os valores atuais do tipo de pagamento.
+        const paginaPreenchida = paginaHtml
+            .replaceAll("<!-- CODIGO_TIPO_PAGAMENTO -->", () => escaparHtml(tipoPagamentoEncontrado.id_tipo_pagamento))
+            .replace("<!-- DESCRICAO_TIPO_PAGAMENTO -->", () => escaparHtml(tipoPagamentoEncontrado.descricao))
+            .replace("<!-- CATEGORIA_TIPO_PAGAMENTO -->", () => escaparHtml(tipoPagamentoEncontrado.categoria))
+            .replaceAll("<!-- ATIVO_TIPO_PAGAMENTO -->", () => tipoPagamentoEncontrado.ativo ? "checked" : "");
+
+        // Envia a página de edição ao navegador.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao abrir edição do tipo de pagamento:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao editar tipo de pagamento",
+            "Não foi possível carregar os dados do tipo de pagamento.",
+            500,
+            resposta
+        );
+    }
+}
+
+// Atualiza os dados de um tipo de pagamento existente.
+async function atualizarTipoPagamento(requisicao, resposta) {
+
+    // Lê os dados enviados pelo formulário em UTF-8.
+    requisicao.setEncoding("utf8");
+
+    // Acumula o conteúdo recebido na requisição.
+    let corpo = "";
+
+    for await (const dadosAtualiza of requisicao) {
+        corpo += dadosAtualiza;
+    }
+
+    // Interpreta os campos enviados pelo formulário.
+    const dados = new URLSearchParams(corpo);
+
+    // Obtém e converte o código do tipo de pagamento.
+    const codigoRecebido = (dados.get("codigo") || "").trim();
+    const codigoTipoPagamento = Number(codigoRecebido);
+    
+
+    // Verifica se o código é um inteiro válido.
+    if (!Number.isSafeInteger(codigoTipoPagamento) ||
+        codigoTipoPagamento <= 0 ||
+        codigoTipoPagamento > 2147483647) {
+
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    if (!/^[0-9]+$/.test(codigoRecebido)) {
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código contendo apenas números.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Obtém o valor original enviado pelo formulário.
+    const ativoRecebido = dados.get("ativo");
+
+    // Valida o valor recebido do checkbox.
+    if (ativoRecebido !== null && ativoRecebido !== "true") {
+
+        await enviarMensagem(
+            "Situação inválida",
+            "O valor informado para a situação é inválido.",
+            400,
+            resposta
+        );
+        return;
+    }
+
+    // Converte para BOOLEAN.
+    const ativo = ativoRecebido === "true";
+
+    try {
+
+        // Carrega a página de confirmação da atualização do tipo de pagamento.
+        const caminhoHtml = path.join(__dirname, "tipo-pagamento-atualizacao-sucesso.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Atualiza o tipo de pagamento identificado pelo código.
+        const resultado = await banco.query(
+            `UPDATE tipo_pagamento
+             SET ativo = $1
+             WHERE id_tipo_pagamento = $2
+             RETURNING id_tipo_pagamento`,
+            [ativo, codigoTipoPagamento]
+        );
+
+        // Verifica se algum registro foi atualizado.
+        if (resultado.rows.length === 0) {
+
+            await enviarMensagem(
+                "Tipo de pagamento não encontrado",
+                "Nenhum tipo de pagamento corresponde ao código informado.",
+                404,
+                resposta
+            );
+            return;
+        }
+
+        // Obtém o código do tipo de pagamento atualizado.
+        const codigoAtualizado = resultado.rows[0].id_tipo_pagamento;
+
+        // Monta a confirmação com um link para a listagem de tipos de pagamento.
+        const dadosAtualizacao = `
+            <p>Código do tipo de pagamento: ${escaparHtml(codigoAtualizado)}</p>
+            <p>
+                <a href="/tipos-pagamentos">
+                    Voltar à listagem de tipos de pagamento
+                </a>
+            </p>
+        `;
+
+        // Insere os dados da atualização na página de confirmação.
+        const paginaPreenchida = paginaHtml.replace(
+            "<!-- DADOS_ATUALIZADO -->",
+            () => dadosAtualizacao
+        );
+
+        // Retorna HTTP 200 informando que a atualização foi realizada.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao atualizar tipo de pagamento:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao atualizar tipo de pagamento",
+            "Não foi possível atualizar o tipo de pagamento.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
 
 //Fim das funções do servidor HTTP
 
@@ -3233,6 +3746,39 @@ const servidor = http.createServer(async (requisicao, resposta) => {
      } else if (caminho === "/precos/atualizar" && metodo === "POST") {
 
         await atualizarPreco(requisicao, resposta);
+        return;
+
+    // Abre o formulário de cadastro de Tipo pagamento.
+    } else if (caminho === "/tipos-pagamentos/novo" && metodo === "GET") {
+
+        await enviarPaginaHtml("tipo-pagamento-cadastro.html", resposta);
+        return;
+
+      // Abre o formulário de cadastro de Tipo pagamento.
+    } else if (caminho === "/tipos-pagamentos/cadastrar" && metodo === "POST") {
+
+        await cadastrarTipoPagamento(requisicao, resposta);
+        return;
+
+      // Abre o formulário de cadastro de Tipo pagamento.
+    } else if (caminho === "/tipos-pagamentos" && metodo === "GET") {
+
+        await listarTiposPagamento(requisicao, resposta);
+        return;
+
+    } else if (caminho === "/tipos-pagamentos/pesquisar" && metodo === "GET") {
+        await enviarPaginaHtml("tipo-pagamento-pesquisar.html", resposta);
+        return;
+
+    // Abre o formulário de edição do tipo de pagamento.
+    } else if (caminho === "/tipos-pagamentos/editar" && metodo === "GET") {
+
+        await mostrarFormularioEdicaoTipoPagamento(requisicao, resposta);
+        return;
+
+    } else if (caminho === "/tipos-pagamentos/atualizar" && metodo === "POST") {
+
+        await atualizarTipoPagamento(requisicao, resposta);
         return;
 
     // Abre a página Sobre.

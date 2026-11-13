@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <!-- Define a codificação de caracteres da página. -->
+    <meta charset="UTF-8">
+
+    <!-- Adapta a página à largura da tela. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Define o título exibido na aba do navegador. -->
+    <title>Loja Clonia - Edição de tipo de pagamento</title>
+</head>
+<body>
+
+    <h1>Edição de tipo de pagamento - Código <!-- CODIGO_TIPO_PAGAMENTO --></h1>
+
+    <!-- Envia os dados alterados para atualização do tipo de pagamento. -->
+    <form action="/tipos-pagamentos/atualizar" method="POST">
+
+        <!-- Envia o código do tipo de pagamento sem exibi-lo no formulário. -->
+        <input
+            type="hidden"
+            name="codigo"
+            value="<!-- CODIGO_TIPO_PAGAMENTO -->"
+        >
+
+        <p>
+            <label for="descricao">Descrição:</label >
+            <input
+                id="descricao"
+                name="descricao"
+                type="text"
+                value="<!-- DESCRICAO_TIPO_PAGAMENTO -->"
+                required
+            readonly>
+        </p>
+
+        <p>
+            <label for="categoria">Categoria:</label>
+            <input
+                id="categoria"
+                name="categoria"
+                type="text"
+                value="<!-- CATEGORIA_TIPO_PAGAMENTO -->"
+                required
+            readonly>
+        </p>
+
+        <p>
+            <label>
+                <input type="checkbox"
+                    id="ativo"
+                    name="ativo"
+                    value="true"
+                    <!-- ATIVO_TIPO_PAGAMENTO -->>
+                Ativo   
+            </label>
+        </p>
+
+        <button type="submit">Salvar alterações</button>
+    </form>
+
+    <!-- Retorna à consulta do tipo de pagamento sem salvar alterações. -->
+    <p>
+        <a href="/tipos-pagamentos">
+            Cancelar edição
+        </a>
+    </p>
+
+    <!-- Retorna à página inicial do sistema. -->
+    <p>
+        <a href="/">Voltar à página inicial</a>
+    </p>
+
+</body>
+</html>
