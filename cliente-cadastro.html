@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -24,7 +25,15 @@
 
         <p>
             <label for="cpf">CPF:</label>
-            <input id="cpf" name="cpf" type="text">
+            <input
+                id="cpf"
+                name="cpf"
+                type="text"
+                maxlength="11"
+                inputmode="numeric"
+                pattern="[0-9]{11}"
+                title="Informe os 11 números do CPF."
+                placeholder="00000000000">
         </p>
 
         <p>
@@ -34,7 +43,13 @@
 
         <p>
             <label for="telefone">Telefone:</label>
-            <input id="telefone" name="telefone" type="tel">
+            <input
+                id="telefone"
+                name="telefone"
+                type="text"
+                maxlength="13"
+                inputmode="numeric"
+                placeholder="44-99999-9999">
         </p>
 
         <p>
@@ -54,6 +69,46 @@
     <p>
         <a href="/">Voltar à página inicial</a>
     </p>
+
+    <script>
+        // Localiza o campo de telefone no HTML.
+        const campoTelefone = document.getElementById("telefone");
+
+        // Executa a formatação quando o usuário digitar.
+        campoTelefone.addEventListener("input", function () {
+
+            // Remove os caracteres que não forem números.
+            let telefone = campoTelefone.value.replace(/\D/g, "");
+
+            // Limita o telefone a 11 dígitos.
+            telefone = telefone.slice(0, 11);
+
+            // Formata o número conforme a quantidade de dígitos.
+            if (telefone.length > 10) {
+
+                // Celular: 44-99999-9999.
+                telefone = telefone.slice(0, 2) + "-" +
+                           telefone.slice(2, 7) + "-" +
+                           telefone.slice(7);
+
+            } else if (telefone.length > 6) {
+
+                // Telefone fixo: 44-3333-4444.
+                telefone = telefone.slice(0, 2) + "-" +
+                           telefone.slice(2, 6) + "-" +
+                           telefone.slice(6);
+
+            } else if (telefone.length > 2) {
+
+                // Acrescenta o hífen após o DDD.
+                telefone = telefone.slice(0, 2) + "-" +
+                           telefone.slice(2);
+            }
+
+            // Atualiza o valor exibido no campo.
+            campoTelefone.value = telefone;
+        });
+    </script>
 
 </body>
 </html>

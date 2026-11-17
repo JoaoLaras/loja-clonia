@@ -831,13 +831,62 @@ async function  consultarCliente(requisicao, resposta) {
 // Lista os clientes cadastrados no banco de dados.
 async function listarClientes(requisicao, resposta) {
 
+    // Interpreta a URL para acessar os filtros da pesquisa.
+    const endereco = new URL(requisicao.url, "http://localhost:3000");
+
+    // Obtém os filtros informados pelo usuário.
+    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
+    const nomeFiltro = (endereco.searchParams.get("nome") || "").trim();
+    const cpfFiltro = (endereco.searchParams.get("cpf") || "").trim();
+    const telefoneFiltro = (endereco.searchParams.get("telefone") || "").trim();
+
+    // Converte o código ou utiliza null quando não informado.
+    const codigoPesquisado = codigoRecebido === "" ? null : Number(codigoRecebido);
+    
+    if (codigoPesquisado !== null) {
+        // Verifica se o código é um inteiro positivo dentro do limite do PostgreSQL.
+        if (!Number.isSafeInteger(codigoPesquisado) ||
+            codigoPesquisado <= 0 ||
+            codigoPesquisado > 2147483647) {
+
+            await enviarMensagem(
+                "Código inválido",
+                "Informe um código inteiro entre 1 e 2147483647.",
+                400,
+                resposta
+            );
+            return;
+        }
+    }
+
+    if (codigoRecebido !== "" && !/^[0-9]+$/.test(codigoRecebido)) {
+    // Retornar erro HTTP 400.
+        await enviarMensagem(
+            "Código inválido",
+            "Informe um código inteiro entre 1 e 2147483647.",
+            400,
+            resposta
+        );
+        return;
+    }
+
     try {
 
-        // Consulta os clientes ordenados pelo nome e código.
+        // Consulta os clientes aplicando os filtros informados.
         const resultado = await banco.query(
-            `SELECT id_cliente, nome, cpf, endereco, telefone, email
-             FROM cliente
-             ORDER BY nome, id_cliente`
+            `SELECT id_cliente, nome, cpf, endereco, email, telefone
+            FROM cliente
+            WHERE ($1::INTEGER IS NULL OR id_cliente = $1)
+            AND nome ILIKE $2
+            AND ($3 = '' OR cpf = $3)
+            AND ($4 = '' OR telefone ILIKE '%' || $4 || '%')
+            ORDER BY nome, id_cliente`,
+            [
+                codigoPesquisado,
+                "%" + nomeFiltro + "%",
+                cpfFiltro,
+                telefoneFiltro 
+            ]
         );
 
         // Acumula as linhas que serão inseridas na tabela HTML.
@@ -2306,112 +2355,6 @@ async function listarMovimentacoesEstoque(requisicao, resposta) {
         );
     }
 }
-
-// Consulta um produto pelo código informado na URL.
-async function consultarProduto(requisicao, resposta) {
-
-    // Interpreta a URL para acessar seus parâmetros.
-    const endereco = new URL(requisicao.url, "http://localhost:3000");
-
-    // Obtém o código informado e remove espaços das extremidades.
-    const codigoRecebido = (endereco.searchParams.get("codigo") || "").trim();
-
-    // Verifica se o código foi informado.
-    if (codigoRecebido === "") {
-
-        await enviarMensagem(
-            "Código obrigatório",
-            "Informe o código do produto.",
-            400,
-            resposta
-        );
-        return;
-    }
-
-    // Converte o código recebido para número.
-    const codigoPesquisado = Number(codigoRecebido);
-
-    // Verifica se o código é um inteiro positivo dentro do limite do PostgreSQL.
-    if (!Number.isSafeInteger(codigoPesquisado) ||
-        codigoPesquisado <= 0 ||
-        codigoPesquisado > 2147483647) {
-
-        await enviarMensagem(
-            "Código inválido",
-            "Informe um código inteiro entre 1 e 2147483647.",
-            400,
-            resposta
-        );
-        return;
-    }
-
-    try {
-
-        // Consulta o produto utilizando um parâmetro SQL.
-        const resultado = await banco.query(
-            `SELECT id_produto, modelo, tamanho, cor, quantidade
-             FROM produto
-             WHERE id_produto = $1`,
-            [codigoPesquisado]
-        );
-
-        // Verifica se o produto foi encontrado.
-        if (resultado.rows.length === 0) {
-
-            await enviarMensagem(
-                "Produto não encontrado",
-                "Nenhum produto corresponde ao código informado.",
-                404,
-                resposta
-            );
-            return;
-        }
-
-        // Obtém o primeiro registro retornado pela consulta.
-        const produtoEncontrado = resultado.rows[0];
-
-        // Monta os dados que serão apresentados no HTML.
-        const dadosProduto = `
-            <p>Código: ${escaparHtml(produtoEncontrado.id_produto)}</p>
-            <p>Modelo: ${escaparHtml(produtoEncontrado.modelo)}</p>
-            <p>Tamanho: ${escaparHtml(produtoEncontrado.tamanho)}</p>
-            <p>Cor: ${escaparHtml(produtoEncontrado.cor)}</p>
-            <p>Quantidade: ${escaparHtml(produtoEncontrado.quantidade)}</p>
-        `;
-
-        // Carrega a página de consulta do produto.
-        const caminhoHtml = path.join(__dirname, "produto-consulta.html");
-        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
-
-        // Insere os dados e o código do produto nos marcadores.
-        const paginaPreenchida = paginaHtml
-            .replace("<!-- DADOS_PRODUTO -->", () => dadosProduto)
-            .replaceAll(
-                "<!-- CODIGO_PRODUTO -->",
-                () => escaparHtml(produtoEncontrado.id_produto)
-            );
-
-        // Envia a página preenchida ao navegador.
-        resposta.writeHead(200, {
-            "Content-Type": "text/html; charset=utf-8"
-        });
-
-        resposta.end(paginaPreenchida);
-
-    } catch (erro) {
-
-        // Registra os detalhes técnicos no terminal.
-        console.error("Erro ao consultar produto:", erro.message);
-
-        await enviarMensagem(
-            "Erro ao consultar produto",
-            "Não foi possível consultar o produto.",
-            500,
-            resposta
-        );
-    }
-}
-
 // Cadastra um novo preco no banco de dados.
 async function cadastrarPreco(requisicao, resposta) {
 
@@ -3178,7 +3121,7 @@ async function cadastrarTipoPagamento(requisicao, resposta) {
             <p>Código do tipo de pagamento: ${escaparHtml(codigoCriado)}</p>
             <p>Tipo de pagamento cadastrado com sucesso.</p>
             <p>
-                <a href="/tipos-pagamento/novo">Cadastrar outro tipo de pagamento</a>
+                <a href="/tipos-pagamentos/novo">Cadastrar outro tipo de pagamento</a>
             </p>
         `;
 
@@ -3574,6 +3517,107 @@ async function atualizarTipoPagamento(requisicao, resposta) {
     }
 }
 
+// Carrega os dados necessários para o cadastro de vendas.
+async function mostrarFormularioCadastroVenda(requisicao, resposta) {
+
+    try {
+
+        // Consulta os clientes cadastrados.
+        const resultadoClientes = await banco.query(
+            `SELECT id_cliente, nome
+             FROM cliente
+             ORDER BY id_cliente, nome`
+        );
+
+        // Acumula as opções de clientes para o HTML.
+        let opcoesClientes = "";
+
+        if (resultadoClientes.rows.length === 0) {
+
+            opcoesClientes = `
+                <option value="" disabled>
+                    Nenhum cliente cadastrado
+                </option>
+            `;
+        }
+
+        // Percorre os clientes retornados pelo banco.
+        for (const cliente of resultadoClientes.rows) {
+
+            // Acumula as opções de clientes para o HTML.
+            opcoesClientes  += `
+                    <option value="${escaparHtml(cliente.id_cliente)}">
+                    ${escaparHtml(cliente.id_cliente)} -
+                    ${escaparHtml(cliente.nome)}
+                </option>
+            `;
+        }
+
+        // Consulta os produtos e seus saldos.
+        const resultadoProdutos = await banco.query(
+            `SELECT id_produto, modelo, tamanho, cor, quantidade
+             FROM produto
+             ORDER BY id_produto, modelo, tamanho, cor`
+        );
+
+        // Acumula as opções de produtos para o HTML.
+        let listaProdutos = "";
+
+        if (resultadoProdutos.rows.length === 0) {
+
+            listaProdutos = `
+                <option value="" disabled>
+                    Nenhum produto cadastrado
+                </option>
+            `;
+        }
+
+        // Percorre os produtos retornados pelo banco.
+        for (const produto of resultadoProdutos.rows) {
+
+            // Monta as opções com os dados dos produtos e estoque disponível.
+            listaProdutos += `
+                <option value="${escaparHtml(produto.id_produto)}"
+                        data-estoque="${escaparHtml(produto.quantidade)}">
+                    ${escaparHtml(produto.id_produto)} -
+                    ${escaparHtml(produto.modelo)} -
+                    ${escaparHtml(produto.tamanho)} -
+                    ${escaparHtml(produto.cor)}
+                </option>
+            `;
+        }
+
+        // Carrega a página de cadastro de vendas.
+        const caminhoHtml = path.join(__dirname, "venda-cadastro.html");
+        const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
+
+        // Preenche as opções de produtos, tamanhos e cores no formulário.
+        const paginaPreenchida = paginaHtml
+            .replace("<!-- OPCOES_CLIENTE_CADASTRO -->", () => opcoesClientes)
+            .replace("<!-- LISTA_PRODUTOS -->", () => listaProdutos);
+
+        // Retorna HTTP 200 com o formulário preenchido.
+        resposta.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8"
+        });
+
+        resposta.end(paginaPreenchida);
+
+    } catch (erro) {
+
+        // Registra os detalhes técnicos no terminal.
+        console.error("Erro ao preencher formulário de venda:", erro.message);
+
+        await enviarMensagem(
+            "Erro ao preencher formulário de venda",
+            "Não foi possível preencher o formulário de venda.",
+            500,
+            resposta
+        );
+        return;
+    }
+}
+
 //Fim das funções do servidor HTTP
 
 //Inicio da rota do servidor HTTP
@@ -3655,6 +3699,10 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     } else if (caminho === "/clientes/cadastrar" && metodo === "POST") {
 
         await cadastrarCliente(requisicao, resposta);
+        return;
+    // Abre o formulário de pesquisa de clientes.
+    } else if (metodo === "GET" && caminho === "/clientes/pesquisar") {
+        await enviarPaginaHtml("cliente-pesquisar.html", resposta);
         return;
 
     // Consulta um cliente pelo código.
@@ -3779,6 +3827,12 @@ const servidor = http.createServer(async (requisicao, resposta) => {
     } else if (caminho === "/tipos-pagamentos/atualizar" && metodo === "POST") {
 
         await atualizarTipoPagamento(requisicao, resposta);
+        return;
+
+    // Abre o formulário de edição do tipo de pagamento.
+    } else if (caminho === "/venda/cadastrar" && metodo === "GET") {
+
+        await mostrarFormularioCadastroVenda(requisicao, resposta);
         return;
 
     // Abre a página Sobre.
