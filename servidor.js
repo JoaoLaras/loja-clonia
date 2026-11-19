@@ -3554,11 +3554,36 @@ async function mostrarFormularioCadastroVenda(requisicao, resposta) {
         }
 
         // Consulta os produtos e seus saldos.
+        // Consulta os produtos com os preços à vista e a prazo.
+        // Prioriza o preço específico do tamanho; caso não exista, utiliza o geral.
         const resultadoProdutos = await banco.query(
-            `SELECT id_produto, modelo, tamanho, cor, quantidade
-             FROM produto
-             ORDER BY id_produto, modelo, tamanho, cor`
+            `SELECT
+                p.id_produto,
+                p.modelo,
+                p.tamanho,
+                p.cor,
+                p.quantidade,
+                pr.preco_vista,
+                pr.preco_prazo
+            FROM produto AS p
+            LEFT JOIN LATERAL (
+                SELECT
+                    pp.preco_vista,
+                    pp.preco_prazo
+                FROM preco_produto AS pp
+                WHERE pp.modelo = p.modelo
+                AND (pp.tamanho = p.tamanho OR pp.tamanho IS NULL)
+                ORDER BY
+                    CASE
+                        WHEN pp.tamanho = p.tamanho THEN 1
+                        ELSE 2
+                    END
+                LIMIT 1
+            ) AS pr ON TRUE
+            ORDER BY p.id_produto, p.modelo, p.tamanho, p.cor`
         );
+
+        console.log("Produtos com preços:", resultadoProdutos.rows);
 
         // Acumula as opções de produtos para o HTML.
         let listaProdutos = "";
@@ -3575,10 +3600,12 @@ async function mostrarFormularioCadastroVenda(requisicao, resposta) {
         // Percorre os produtos retornados pelo banco.
         for (const produto of resultadoProdutos.rows) {
 
-            // Monta as opções com os dados dos produtos e estoque disponível.
+            // Monta as opções com os dados dos produtos, estoque e preços.
             listaProdutos += `
                 <option value="${escaparHtml(produto.id_produto)}"
-                        data-estoque="${escaparHtml(produto.quantidade)}">
+                        data-estoque="${escaparHtml(produto.quantidade)}"
+                        data-preco-vista="${escaparHtml(produto.preco_vista ?? "")}"
+                        data-preco-prazo="${escaparHtml(produto.preco_prazo ?? "")}">
                     ${escaparHtml(produto.id_produto)} -
                     ${escaparHtml(produto.modelo)} -
                     ${escaparHtml(produto.tamanho)} -

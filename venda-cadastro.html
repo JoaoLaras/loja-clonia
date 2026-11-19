@@ -32,15 +32,258 @@
         <input type="number" id="estoqueAtual" value="0" readonly>
     </p>
 
-    <!-- Aqui ficará a lista dos itens adicionados. -->
+    <p>
+        <label for="quantidade">Quantidade:</label>
+        <input type="number" id="quantidade" name="quantidade"
+            min="1" step="1" value="1" required>
+    </p>
 
-    <!-- Aqui ficarão os totais à vista e a prazo. -->
+    <!-- Aqui ficará a lista dos itens adicionados. -->
+    <h2>Itens da Venda</h2>
+
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Código</th>
+                <th>Quantidade</th>
+                <th>Preço unitário à Vista</th>
+                <th>Preço unitário a Prazo</th>
+                <th>Total à Vista</th>
+                <th>Total a Prazo</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody id="listaItensVenda">
+        </tbody>
+    </table>
+
+    <p>
+        <strong>Total à vista:</strong>
+        <span id="totalGeralVista">R$ 0,00</span>
+    </p>
+
+    <p>
+        <strong>Total a prazo:</strong>
+        <span id="totalGeralPrazo">R$ 0,00</span>
+    </p>
 
     <!-- Aqui ficarão as formas de pagamento. -->
+
+    <button type="button" id="adicionarProduto">
+        Adicionar Produto
+    </button>
 
     <p>
         <a href="/">Voltar à página inicial</a>
     </p>
 
+    
+    <script>
+        //Evento do comboBox de produtos para atualizar o estoque atual.
+        //Localiza o ComboBox
+        const selecionarProduto = document.getElementById("produto");
+        
+        //Detecta a alteração do produto
+        selecionarProduto.addEventListener("change", function() {
+            //Obtém a opção selecionada
+            const opcaoSelecionada = selecionarProduto.selectedOptions[0];
+            //Recupera a quantidade em estoque, caso não exista, define como 0 exemplo: selecione um produto.
+            const estoqueAtual = opcaoSelecionada.dataset.estoque ?? 0;
+            //Atualiza o campo HTML
+            document.getElementById("estoqueAtual").value = estoqueAtual;
+        });
+        
+    </script>
+    
+    
+    <script>
+        //Evento do campo de quantidade para validar a entrada.
+        //Localiza o campo de quantidade
+        const campoQuantidade = document.getElementById("quantidade");
+        //Detecta a alteração do campo de quantidade
+        campoQuantidade.addEventListener("change", function() {
+
+            const estoqueAtual = parseInt(document.getElementById("estoqueAtual").value);
+            
+            const quantidadeSelecionada = Number(campoQuantidade.value);
+            if (!Number.isInteger(quantidadeSelecionada)) {
+                alert("Informe uma quantidade inteira.");
+                campoQuantidade.value = 1;
+                return;
+            }
+
+            //Localiza o ComboBox
+            const selecionarProduto = document.getElementById("produto");
+            //Recupera o código do produto selecionado em string, caso não exista, define como vazio exemplo: selecione um produto.
+            const codigoProduto = selecionarProduto.value;
+
+            if (codigoProduto !== "") {
+
+                if (estoqueAtual === 0) {
+                    alert("Produto sem estoque disponível.");
+                    campoQuantidade.value = 0;
+                    return;
+                }
+
+                if (Number.isNaN(quantidadeSelecionada) || quantidadeSelecionada <= 0) {
+                    alert("Informe uma quantidade válida e maior que zero.");
+                    campoQuantidade.value = 1;
+                    return;
+                }
+
+                if (quantidadeSelecionada > estoqueAtual) {
+                    alert("A quantidade selecionada é maior do que o estoque disponível.");
+                    campoQuantidade.value = estoqueAtual; // Ajusta para o máximo disponível
+                    return;
+                }
+            }
+        });
+        
+    </script>
+    
+    
+    <script>
+        //Armazena os itens adicionados à venda
+        const itensVenda = []; 
+        //Evento do botão de adicionar produto para validar a entrada.
+        const botaoAdicionar = document.getElementById("adicionarProduto");
+        botaoAdicionar.addEventListener("click", function() {
+            
+            const selecionarProduto = document.getElementById("produto");
+            const campoQuantidade = document.getElementById("quantidade");
+            const estoqueAtual = parseInt(document.getElementById("estoqueAtual").value);
+            const quantidadeSelecionada = Number(campoQuantidade.value);
+            const codigoProduto = selecionarProduto.value;
+
+            if (codigoProduto === "") {
+                alert("Selecione um produto antes de adicionar.");
+                return;
+            }
+
+            if (estoqueAtual === 0) {
+                alert("Produto sem estoque disponível.");
+                return;
+            }
+
+            if (Number.isNaN(quantidadeSelecionada) || quantidadeSelecionada <= 0) {
+                alert("Informe uma quantidade válida e maior que zero.");
+                return;
+            }
+
+            if (!Number.isInteger(quantidadeSelecionada)) {
+                alert("Informe uma quantidade inteira.");
+                return;
+            }
+
+            if (quantidadeSelecionada > estoqueAtual) {
+                alert("A quantidade selecionada é maior do que o estoque disponível.");
+                return;
+            }
+
+          const produtoExistente = itensVenda.find(
+                item => item.idProduto === Number(codigoProduto)
+            );
+
+            if (produtoExistente) {
+                alert("Este produto já foi adicionado à venda.");
+                return;
+            }
+
+            const opcaoSelecionada = selecionarProduto.selectedOptions[0];
+            //Recupera a quantidade em estoque, caso não exista, define como 0 exemplo: selecione um produto.
+            const precoVista = opcaoSelecionada.dataset.precoVista;
+            const precoPrazo = opcaoSelecionada.dataset.precoPrazo;
+
+            if (precoVista === "" || precoPrazo === "") {
+                alert("Produto sem preço cadastrado. Realize o cadastro de preços antes de adicionar à venda.");
+                return;
+            }
+
+            itensVenda.push({
+                idProduto: Number(codigoProduto),
+                quantidade: quantidadeSelecionada,
+                precoVista: Number(precoVista),
+                precoPrazo: Number(precoPrazo)
+            });
+
+            // Localiza o corpo da tabela.
+            const listaItensVenda = document.getElementById("listaItensVenda");
+
+            // Limpa as linhas anteriores.
+            listaItensVenda.innerHTML = "";
+           
+            atualizarTabelaItens();
+        });
+
+        // Função responsável por remover um produto.
+        function removerItem(codigoProduto) {
+
+            const findIndex = itensVenda.findIndex(item => item.idProduto === codigoProduto);
+            if (findIndex !== -1) {
+                itensVenda.splice(findIndex, 1);
+
+                atualizarTabelaItens();
+            }
+
+        }
+
+        // Função responsável por atualizar a tabela de itens.
+        function atualizarTabelaItens() {
+            
+            const listaItensVenda = document.getElementById("listaItensVenda");
+            listaItensVenda.innerHTML = "";
+
+            itensVenda.forEach(function(item) {
+                listaItensVenda.innerHTML += `
+                    <tr>
+                        <td>${item.idProduto}</td>
+                        <td>${item.quantidade}</td>
+                        <td><button type="button" onclick="removerItem(${item.idProduto})">Remover</button></td>
+                    </tr>
+                `;
+            });
+        }
+
+
+        function atualizarTabelaItens() {
+
+            const listaItensVenda = document.getElementById("listaItensVenda");
+            listaItensVenda.innerHTML = "";
+            
+            let totalGeralVista = 0;
+            let totalGeralPrazo = 0;
+
+            itensVenda.forEach(function(item) {
+                const totalVista = item.quantidade * item.precoVista;
+                const totalPrazo = item.quantidade * item.precoPrazo;
+
+                totalGeralVista += totalVista;
+                totalGeralPrazo += totalPrazo;
+
+                listaItensVenda.innerHTML += `
+                    <tr>
+                        <td>${item.idProduto}</td>
+                        <td>${item.quantidade}</td>
+                        <td>${item.precoVista.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
+                        <td>${item.precoPrazo.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
+                        <td>${totalVista.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
+                        <td>${totalPrazo.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
+                        <td><button type="button" onclick="removerItem(${item.idProduto})">Remover</button></td>
+                    </tr>
+                `;
+            });
+            // Atualiza os totais.
+            document.getElementById("totalGeralVista").textContent = formatarMoeda(totalGeralVista);
+            document.getElementById("totalGeralPrazo").textContent = formatarMoeda(totalGeralPrazo);
+        }
+
+        // Formata valores monetários no padrão brasileiro.
+        function formatarMoeda(valor) {
+            return valor.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL"
+            });
+        }
+    </script>
 </body>
 </html>
