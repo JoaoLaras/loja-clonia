@@ -1,289 +1,913 @@
 <!DOCTYPE html>
+
 <html lang="pt-BR">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Loja Clonia - Cadastro de Venda</title>
+
 </head>
+
 <body>
 
     <h1>Cadastro de Venda</h1>
 
     <!-- Aqui ficará a seleção do cliente. -->
+
     <p>
+
         <label for="cliente">Cliente:</label>
-        <select id="cliente" name="cliente" required>
-            <option value="">Selecione um cliente</option>
+
+        <!-- Seleção opcional do cliente da venda. -->
+        <select id="cliente" name="cliente">
+            <option value="">Venda sem cliente identificado</option>
             <!-- OPCOES_CLIENTE_CADASTRO -->
         </select>
+
     </p>
 
     <!-- Aqui ficará a seleção dos produtos. -->
+
     <p>
+
         <label for="produto">Produto:</label>
+
         <select id="produto" name="produto" required>
+
             <option value="">Selecione um produto</option>
+
             <!-- LISTA_PRODUTOS -->
+
         </select>
+
     </p>
 
     <p>
+
         <label for="estoqueAtual">Estoque atual:</label>
+
         <input type="number" id="estoqueAtual" value="0" readonly>
+
     </p>
 
     <p>
+
         <label for="quantidade">Quantidade:</label>
+
         <input type="number" id="quantidade" name="quantidade"
+
             min="1" step="1" value="1" required>
+
     </p>
 
     <!-- Aqui ficará a lista dos itens adicionados. -->
+
     <h2>Itens da Venda</h2>
 
     <table border="1">
+
         <thead>
+
             <tr>
+
                 <th>Código</th>
+
                 <th>Quantidade</th>
+
                 <th>Preço unitário à Vista</th>
+
                 <th>Preço unitário a Prazo</th>
+
                 <th>Total à Vista</th>
+
                 <th>Total a Prazo</th>
+
                 <th>Ação</th>
+
             </tr>
+
         </thead>
+
         <tbody id="listaItensVenda">
+
         </tbody>
+
     </table>
 
     <p>
+
         <strong>Total à vista:</strong>
+
         <span id="totalGeralVista">R$ 0,00</span>
+
     </p>
 
     <p>
-        <strong>Total a prazo:</strong>
-        <span id="totalGeralPrazo">R$ 0,00</span>
-    </p>
 
-    <!-- Aqui ficarão as formas de pagamento. -->
+        <strong>Total a prazo:</strong>
+
+        <span id="totalGeralPrazo">R$ 0,00</span>
+
+    </p>
 
     <button type="button" id="adicionarProduto">
+
         Adicionar Produto
+
     </button>
 
+        <h2>Formas de Pagamento</h2>
+
     <p>
-        <a href="/">Voltar à página inicial</a>
+
+        <label for="tipoPagamento">Forma de pagamento:</label>
+
+        <select id="tipoPagamento" required>
+
+            <option value="">Selecione uma forma de pagamento</option>
+
+            <!-- OPCOES_TIPO_PAGAMENTO -->
+
+        </select>
+
     </p>
 
-    
-    <script>
-        //Evento do comboBox de produtos para atualizar o estoque atual.
-        //Localiza o ComboBox
-        const selecionarProduto = document.getElementById("produto");
-        
-        //Detecta a alteração do produto
-        selecionarProduto.addEventListener("change", function() {
-            //Obtém a opção selecionada
-            const opcaoSelecionada = selecionarProduto.selectedOptions[0];
-            //Recupera a quantidade em estoque, caso não exista, define como 0 exemplo: selecione um produto.
-            const estoqueAtual = opcaoSelecionada.dataset.estoque ?? 0;
-            //Atualiza o campo HTML
-            document.getElementById("estoqueAtual").value = estoqueAtual;
+    <p id="campoParcelas" hidden>
+
+        <label for="numeroParcelas">Número de parcelas:</label>
+
+        <input type="number"
+
+            id="numeroParcelas"
+
+            min="1"
+
+            step="1"
+
+            value="1">
+
+    </p>
+
+    <p>
+
+        <label for="valorPagamento">Valor do pagamento:</label>
+
+        <input type="number"
+
+            id="valorPagamento"
+
+            min="0.01"
+
+            step="0.01">
+
+    </p>
+
+    <p>
+
+        <button type="button" id="adicionarPagamento">
+
+            Adicionar Pagamento
+
+        </button>
+
+    </p>
+
+    <h3>Pagamentos Adicionados</h3>
+
+    <table border="1">
+
+        <thead>
+
+            <tr>
+
+                <th>Forma de Pagamento</th>
+
+                <th>Parcelas</th>
+
+                <th>Valor</th>
+
+                <th>Ação</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody id="listaPagamentos">
+
+        </tbody>
+
+    </table>
+
+    <!-- Resumo financeiro atualizado quando os pagamentos mudam. -->
+    <h3>Resumo dos Pagamentos</h3>
+    <!-- Exibe a modalidade de pagamento aplicada à venda. -->
+    <p>
+        <strong>Modalidade:</strong>
+        <span id="modalidadeVenda">Não definida</span>
+    </p>
+    <p><strong>Total à pagar:</strong> <span id="totalAplicado">R$ 0,00</span></p>
+    <p><strong>Total pago:</strong> <span id="totalPago">R$ 0,00</span></p>
+    <p><strong>Restante à pagar:</strong> <span id="saldoRestante">R$ 0,00</span></p>
+
+    <!-- Botão responsável por iniciar a finalização da venda. -->
+    <p>
+        <button type="button" id="finalizarVenda">
+            Finalizar Venda
+        </button>
+    </p>
+
+    <p>
+
+        <a href="/">Voltar à página inicial</a>
+
+    </p>
+
+<script>
+    // =============================================================
+    // 1. ESTADO DA VENDA 
+    // =============================================================
+
+    // Armazena os produtos incluídos na venda, ainda sem gravar no banco.
+    const itensVenda = [];
+
+    // Armazena os pagamentos incluídos na venda, ainda sem gravar no banco.
+    const pagamentosVenda = [];
+
+    // =============================================================
+    // 2. ELEMENTOS DA TELA - referências aos IDs do HTML
+    // =============================================================
+
+    // Seleção de produto, estoque exibido e quantidade a vender.
+    const selecionarProduto = document.getElementById("produto");
+    const campoQuantidade = document.getElementById("quantidade");
+    const campoEstoque = document.getElementById("estoqueAtual");
+
+    // Seleção da forma de pagamento, valor e quantidade de parcelas.
+    const campoTipoPagamento = document.getElementById("tipoPagamento");
+    const campoValorPagamento = document.getElementById("valorPagamento");
+    const campoNumeroParcelas = document.getElementById("numeroParcelas");
+    const grupoParcelas = document.getElementById("campoParcelas");
+
+    // Botões de inclusão de produtos e pagamentos.
+    const botaoAdicionarProduto = document.getElementById("adicionarProduto");
+    const botaoAdicionarPagamento = document.getElementById("adicionarPagamento");
+
+    // =============================================================
+    // 3. FUNÇÕES AUXILIARES
+    // =============================================================
+
+    // Formata um número para exibição em reais; não altera o valor numérico.
+    function formatarMoeda(valor) {
+        return valor.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL"
         });
-        
-    </script>
-    
-    
-    <script>
-        //Evento do campo de quantidade para validar a entrada.
-        //Localiza o campo de quantidade
-        const campoQuantidade = document.getElementById("quantidade");
-        //Detecta a alteração do campo de quantidade
-        campoQuantidade.addEventListener("change", function() {
+    }
 
-            const estoqueAtual = parseInt(document.getElementById("estoqueAtual").value);
-            
-            const quantidadeSelecionada = Number(campoQuantidade.value);
-            if (!Number.isInteger(quantidadeSelecionada)) {
-                alert("Informe uma quantidade inteira.");
-                campoQuantidade.value = 1;
-                return;
-            }
+    // Converte um valor monetário em centavos para comparações financeiras.
+    function paraCentavos(valor) {
+        return Math.round(valor * 100);
+    }
 
-            //Localiza o ComboBox
-            const selecionarProduto = document.getElementById("produto");
-            //Recupera o código do produto selecionado em string, caso não exista, define como vazio exemplo: selecione um produto.
-            const codigoProduto = selecionarProduto.value;
+    // Determina se uma forma de pagamento usa a regra de preço à vista.
+    function ehPagamentoVista(categoria, numeroParcelas) {
+        return categoria === "PIX" ||
+               categoria === "DINHEIRO" ||
+               categoria === "DEBITO" ||
+               (categoria === "CREDITO" && numeroParcelas === 1);
+    }
 
-            if (codigoProduto !== "") {
+    // Calcula os totais dos produtos conforme os dois preços cadastrados.
+    function calcularTotaisItens() {
+        // Soma quantidade × preço à vista para cada produto.
+        const totalVista = itensVenda.reduce(
+            (total, item) => total + item.quantidade * item.precoVista, 0
+        );
 
-                if (estoqueAtual === 0) {
-                    alert("Produto sem estoque disponível.");
-                    campoQuantidade.value = 0;
-                    return;
-                }
+        // Soma quantidade × preço a prazo para cada produto.
+        const totalPrazo = itensVenda.reduce(
+            (total, item) => total + item.quantidade * item.precoPrazo, 0
+        );
 
-                if (Number.isNaN(quantidadeSelecionada) || quantidadeSelecionada <= 0) {
-                    alert("Informe uma quantidade válida e maior que zero.");
-                    campoQuantidade.value = 1;
-                    return;
-                }
+        // Devolve os dois totais para as outras funções da tela.
+        return { totalVista, totalPrazo };
+    }
 
-                if (quantidadeSelecionada > estoqueAtual) {
-                    alert("A quantidade selecionada é maior do que o estoque disponível.");
-                    campoQuantidade.value = estoqueAtual; // Ajusta para o máximo disponível
-                    return;
-                }
-            }
+    // Calcula o total aplicável, o valor pago e o saldo restante.
+    function calcularResumoPagamentos() {
+        // Verifica se existe algum pagamento à vista, inclusive crédito em 1x.
+        const vendaVista = pagamentosVenda.some(pagamento => pagamento.aVista);
+
+        // Recupera os totais dos produtos já adicionados.
+        const { totalVista, totalPrazo } = calcularTotaisItens();
+
+        // Com algum pagamento à vista, toda a venda utiliza preço à vista.
+        const totalVenda = vendaVista ? totalVista : totalPrazo;
+
+        // Soma os valores dos pagamentos existentes.
+        const totalPago = pagamentosVenda.reduce(
+            (total, pagamento) => total + pagamento.valor, 0
+        );
+
+        // Calcula o saldo em centavos para reduzir erros de ponto flutuante.
+        const saldoCentavos = paraCentavos(totalVenda) - paraCentavos(totalPago);
+
+        // Retorna os valores usados na apresentação e nas validações.
+        return { vendaVista, totalVenda, totalPago, saldoCentavos };
+    }
+
+    // =============================================================
+    // 4. ATUALIZAÇÃO DA TABELA DE PRODUTOS
+    // =============================================================
+
+    // Reconstrói a tabela e recalcula os totais sempre que os itens mudam.
+    function atualizarTabelaItens() {
+        // Localiza a área que contém as linhas dos produtos.
+        const listaItensVenda = document.getElementById("listaItensVenda");
+
+        // Remove as linhas anteriores para evitar duplicidade visual.
+        listaItensVenda.innerHTML = "";
+
+        // Inicia os acumuladores numéricos de cada modalidade.
+        let totalGeralVista = 0;
+        let totalGeralPrazo = 0;
+
+        // Percorre todos os objetos do array de produtos.
+        itensVenda.forEach(function(item) {
+            // Calcula os subtotais do produto atual.
+            const totalVista = item.quantidade * item.precoVista;
+            const totalPrazo = item.quantidade * item.precoPrazo;
+
+            // Soma os subtotais aos acumuladores.
+            totalGeralVista += totalVista;
+            totalGeralPrazo += totalPrazo;
+
+            // Insere uma nova linha com código, quantidades, preços e remoção.
+            // Os dados inseridos são numéricos e validados na inclusão.
+            listaItensVenda.innerHTML += `
+                <tr>
+                    <td>${item.idProduto}</td>
+                    <td>${item.quantidade}</td>
+                    <td>${formatarMoeda(item.precoVista)}</td>
+                    <td>${formatarMoeda(item.precoPrazo)}</td>
+                    <td>${formatarMoeda(totalVista)}</td>
+                    <td>${formatarMoeda(totalPrazo)}</td>
+                    <td><button type="button" onclick="removerItem(${item.idProduto})">Remover</button></td>
+                </tr>
+            `;
         });
-        
-    </script>
-    
-    
-    <script>
-        //Armazena os itens adicionados à venda
-        const itensVenda = []; 
-        //Evento do botão de adicionar produto para validar a entrada.
-        const botaoAdicionar = document.getElementById("adicionarProduto");
-        botaoAdicionar.addEventListener("click", function() {
-            
-            const selecionarProduto = document.getElementById("produto");
-            const campoQuantidade = document.getElementById("quantidade");
-            const estoqueAtual = parseInt(document.getElementById("estoqueAtual").value);
-            const quantidadeSelecionada = Number(campoQuantidade.value);
-            const codigoProduto = selecionarProduto.value;
 
-            if (codigoProduto === "") {
-                alert("Selecione um produto antes de adicionar.");
-                return;
-            }
+        // Atualiza os textos dos totais abaixo da tabela HTML.
+        document.getElementById("totalGeralVista").textContent =
+            formatarMoeda(totalGeralVista);
+        document.getElementById("totalGeralPrazo").textContent =
+            formatarMoeda(totalGeralPrazo);
+    }
 
-            if (estoqueAtual === 0) {
-                alert("Produto sem estoque disponível.");
-                return;
-            }
+    // Remove o produto pelo código, preservando a regra de não duplicidade.
+    function removerItem(codigoProduto) {
+        // Não deixa alterar itens enquanto existirem pagamentos já incluídos.
+        if (pagamentosVenda.length > 0) {
+            alert("Remova os pagamentos antes de alterar os produtos da venda.");
+            return;
+        }
 
-            if (Number.isNaN(quantidadeSelecionada) || quantidadeSelecionada <= 0) {
-                alert("Informe uma quantidade válida e maior que zero.");
-                return;
-            }
+        // Localiza a posição do produto dentro do array.
+        const indiceProduto = itensVenda.findIndex(
+            item => item.idProduto === codigoProduto
+        );
 
-            if (!Number.isInteger(quantidadeSelecionada)) {
-                alert("Informe uma quantidade inteira.");
-                return;
-            }
+        // Se encontrou o produto, remove um elemento na posição localizada.
+        if (indiceProduto !== -1) {
+            itensVenda.splice(indiceProduto, 1);
 
-            if (quantidadeSelecionada > estoqueAtual) {
-                alert("A quantidade selecionada é maior do que o estoque disponível.");
-                return;
-            }
+            // Recria a tabela com os produtos restantes.
+            atualizarTabelaItens();
+        }
+    }
 
-          const produtoExistente = itensVenda.find(
-                item => item.idProduto === Number(codigoProduto)
+    // =============================================================
+    // 5. EVENTOS DOS PRODUTOS
+    // =============================================================
+
+    // Atualiza o estoque exibido quando outro produto é selecionado.
+    selecionarProduto.addEventListener("change", function() {
+        // Recupera a opção ativa do ComboBox.
+        const opcaoSelecionada = selecionarProduto.selectedOptions[0];
+
+        // Usa zero quando não houver estoque associado à opção.
+        const estoqueAtual = opcaoSelecionada?.dataset.estoque ?? 0;
+
+        // Atualiza o campo somente de leitura da tela.
+        campoEstoque.value = estoqueAtual;
+    });
+
+    // Valida a quantidade quando o usuário termina de alterá-la.
+    campoQuantidade.addEventListener("change", function() {
+        // Se não existe produto selecionado, a inclusão validará a seleção.
+        if (selecionarProduto.value === "") {
+            return;
+        }
+
+        // Recupera quantidade e estoque como números.
+        const quantidade = Number(campoQuantidade.value);
+        const estoque = Number(campoEstoque.value);
+
+        // Se o produto não tem estoque, a quantidade permitida é zero.
+        if (estoque <= 0) {
+            alert("Produto sem estoque disponível.");
+            campoQuantidade.value = 0;
+            return;
+        }
+
+        // Bloqueia campos vazios e quantidades não positivas.
+        if (campoQuantidade.value.trim() === "" ||
+            !Number.isFinite(quantidade) || quantidade <= 0) {
+            alert("Informe uma quantidade válida e maior que zero.");
+            campoQuantidade.value = 1;
+            return;
+        }
+
+        // Não permite quantidades fracionárias para peças de roupa.
+        if (!Number.isInteger(quantidade)) {
+            alert("Informe uma quantidade inteira.");
+            campoQuantidade.value = 1;
+            return;
+        }
+
+        // Limita o valor digitado ao saldo existente.
+        if (quantidade > estoque) {
+            alert("A quantidade selecionada é maior do que o estoque disponível.");
+            campoQuantidade.value = estoque;
+        }
+    });
+
+    // Inclui um produto após todas as validações.
+    botaoAdicionarProduto.addEventListener("click", function() {
+        // Evita alterar o total da venda depois de cadastrar pagamentos.
+        if (pagamentosVenda.length > 0) {
+            alert("Remova os pagamentos antes de alterar os produtos da venda.");
+            return;
+        }
+
+        // Recupera o código da opção selecionada no ComboBox.
+        const codigoProduto = selecionarProduto.value;
+
+        // Obriga a seleção de um produto válido.
+        if (codigoProduto === "") {
+            alert("Selecione um produto antes de adicionar.");
+            return;
+        }
+
+        // Obtém o estoque e a quantidade como números.
+        const estoqueAtual = Number(campoEstoque.value);
+        const quantidadeSelecionada = Number(campoQuantidade.value);
+
+        // Valida se existe estoque disponível para o produto.
+        if (!Number.isFinite(estoqueAtual) || estoqueAtual <= 0) {
+            alert("Produto sem estoque disponível.");
+            return;
+        }
+
+        // Impede valor vazio, zero, negativo ou inválido.
+        if (campoQuantidade.value.trim() === "" ||
+            !Number.isFinite(quantidadeSelecionada) ||
+            quantidadeSelecionada <= 0) {
+            alert("Informe uma quantidade válida e maior que zero.");
+            return;
+        }
+
+        // Impede vender frações de peças de roupa.
+        if (!Number.isInteger(quantidadeSelecionada)) {
+            alert("Informe uma quantidade inteira.");
+            return;
+        }
+
+        // Impede quantidade maior que o estoque cadastrado.
+        if (quantidadeSelecionada > estoqueAtual) {
+            alert("A quantidade selecionada é maior do que o estoque disponível.");
+            return;
+        }
+
+        // Converte o código em número para manter o mesmo tipo no array.
+        const idProduto = Number(codigoProduto);
+
+        // Procura se o produto já foi incluído nesta venda.
+        const produtoExistente = itensVenda.find(
+            item => item.idProduto === idProduto
+        );
+
+        // Bloqueia a repetição do mesmo produto.
+        if (produtoExistente) {
+            alert("Este produto já foi adicionado à venda.");
+            return;
+        }
+
+        // Recupera os preços da opção selecionada.
+        const opcaoSelecionada = selecionarProduto.selectedOptions[0];
+        const precoVistaTexto = opcaoSelecionada?.dataset.precoVista;
+        const precoPrazoTexto = opcaoSelecionada?.dataset.precoPrazo;
+
+        // Impede produtos que não tenham preço à vista ou a prazo cadastrado.
+        if (precoVistaTexto == null || precoVistaTexto === "" ||
+            precoPrazoTexto == null || precoPrazoTexto === "") {
+            alert("Produto sem preço cadastrado. Realize o cadastro de preços antes de adicionar à venda.");
+            return;
+        }
+
+        // Converte os preços para números somente depois de verificar ausência.
+        const precoVista = Number(precoVistaTexto);
+        const precoPrazo = Number(precoPrazoTexto);
+
+        // Verifica se os preços recebidos são válidos e não negativos.
+        if (!Number.isFinite(precoVista) || !Number.isFinite(precoPrazo) ||
+            precoVista < 0 || precoPrazo < 0) {
+            alert("Os preços do produto estão inválidos.");
+            return;
+        }
+
+        // Armazena o objeto do produto na memória do navegador.
+        itensVenda.push({
+            idProduto: idProduto,
+            quantidade: quantidadeSelecionada,
+            precoVista: precoVista,
+            precoPrazo: precoPrazo
+        });
+
+        // Atualiza a tabela de produtos e os totais exibidos.
+        atualizarTabelaItens();
+    });
+
+    // =============================================================
+    // 6. EVENTOS DOS PAGAMENTOS
+    // =============================================================
+
+    // Mostra as parcelas quando o pagamento selecionado é crédito.
+    campoTipoPagamento.addEventListener("change", function() {
+        // Lê a categoria associada ao tipo de pagamento selecionado.
+        const opcaoSelecionada = campoTipoPagamento.selectedOptions[0];
+        const categoria = opcaoSelecionada?.dataset.categoria;
+
+        // O atributo hidden controla se o grupo de parcelas é visível.
+        if (categoria === "CREDITO") {
+            grupoParcelas.hidden = false;
+        } else {
+            grupoParcelas.hidden = true;
+
+            // Fora do crédito, utiliza o valor padrão de uma parcela.
+            campoNumeroParcelas.value = 1;
+        }
+    });
+
+    // Valida e adiciona um pagamento ao array.
+    botaoAdicionarPagamento.addEventListener("click", function() {
+        // Obtém os dados digitados e selecionados no formulário.
+        const idTexto = campoTipoPagamento.value;
+        const valorTexto = campoValorPagamento.value.trim();
+        const numeroParcelas = Number(campoNumeroParcelas.value);
+        const opcaoSelecionada = campoTipoPagamento.selectedOptions[0];
+        const categoria = opcaoSelecionada?.dataset.categoria;
+
+        // Exige uma forma de pagamento selecionada.
+        if (idTexto === "") {
+            alert("Selecione uma forma de pagamento.");
+            return;
+        }
+
+        // Verifica se a categoria está entre as modalidades aceitas.
+        const categoriasPermitidas = ["PIX", "DINHEIRO", "DEBITO", "CREDITO"];
+        if (!categoriasPermitidas.includes(categoria)) {
+            alert("Categoria de pagamento inválida.");
+            return;
+        }
+
+        // Não permite pagamentos sem produtos.
+        if (itensVenda.length === 0) {
+            alert("Adicione pelo menos um produto antes de informar o pagamento.");
+            return;
+        }
+
+        // Converte o valor do pagamento para número.
+        const valorPagamento = Number(valorTexto);
+
+        // Exige um valor finito, preenchido e maior que zero.
+        if (valorTexto === "" || !Number.isFinite(valorPagamento) ||
+            valorPagamento <= 0) {
+            alert("Informe um valor de pagamento válido e maior que zero.");
+            return;
+        }
+
+        // Converte para centavos para fazer comparações financeiras.
+        const valorPagamentoCentavos = paraCentavos(valorPagamento);
+
+        // Impede valores com mais de duas casas decimais.
+        if (Math.abs(valorPagamento * 100 - valorPagamentoCentavos) > 0.000001) {
+            alert("O pagamento deve possuir no máximo duas casas decimais.");
+            return;
+        }
+
+        // No crédito, permite apenas parcelas inteiras a partir de uma.
+        if (categoria === "CREDITO" &&
+            (!Number.isInteger(numeroParcelas) || numeroParcelas < 1)) {
+            alert("Informe uma quantidade de parcelas válida.");
+            return;
+        }
+
+        // Identifica se o novo pagamento usa preço à vista.
+        const pagamentoVista = ehPagamentoVista(categoria, numeroParcelas);
+
+        // Considera pagamentos anteriores e o novo para definir modalidade.
+        const existePagamentoVista = pagamentosVenda.some(
+            pagamento => pagamento.aVista === true
+        );
+        const vendaVista = existePagamentoVista || pagamentoVista;
+
+        // Recupera os dois totais dos produtos.
+        const { totalVista, totalPrazo } = calcularTotaisItens();
+
+        // A venda inteira usa preço à vista quando existir algum pagamento à vista.
+        const totalVenda = vendaVista ? totalVista : totalPrazo;
+
+        // Soma os valores já pagos, em centavos.
+        const totalPagoCentavos = pagamentosVenda.reduce(
+            (total, pagamento) => total + paraCentavos(pagamento.valor), 0
+        );
+
+        // Calcula o saldo restante considerando a modalidade do novo pagamento.
+        const saldoRestanteCentavos = paraCentavos(totalVenda) - totalPagoCentavos;
+
+        // Impede que o novo pagamento ultrapasse o saldo disponível.
+        if (valorPagamentoCentavos > saldoRestanteCentavos) {
+            alert("O valor do pagamento é maior que o saldo restante da venda.");
+            return;
+        }
+
+        // Adiciona o pagamento na memória, sem gravar ainda no PostgreSQL.
+        pagamentosVenda.push({
+            idTipoPagamento: Number(idTexto),
+            categoria: categoria,
+            valor: valorPagamento,
+            numeroParcelas: categoria === "CREDITO" ? numeroParcelas : 1,
+            aVista: pagamentoVista
+        });
+
+        // Atualiza a tabela, o total pago e o saldo restante.
+        atualizarTabelaPagamentos();
+
+        // Limpa o valor digitado para facilitar a próxima inclusão.
+        campoValorPagamento.value = "";
+
+        // Mostra os pagamentos no console durante os testes.
+        console.log("Pagamentos adicionados:", pagamentosVenda);
+    });
+
+    // =============================================================
+    // 7. ATUALIZAÇÃO E REMOÇÃO DOS PAGAMENTOS
+    // =============================================================
+
+    // Reconstrói a tabela de pagamentos de acordo com o array atual.
+    function atualizarTabelaPagamentos() {
+        // Localiza o corpo da tabela de pagamentos.
+        const listaPagamentos = document.getElementById("listaPagamentos");
+
+        // Limpa linhas antigas antes de percorrer o array.
+        listaPagamentos.innerHTML = "";
+
+        // Cada elemento do array gera uma linha, com seu índice para remoção.
+        pagamentosVenda.forEach(function(pagamento, indice) {
+            // Somente crédito mostra o número de parcelas.
+            const parcelas = pagamento.categoria === "CREDITO"
+                ? pagamento.numeroParcelas + "x"
+                : "-";
+
+            // Adiciona a linha com categoria, parcelas, valor e botão Remover.
+            listaPagamentos.innerHTML += `
+                <tr>
+                    <td>${pagamento.categoria}</td>
+                    <td>${parcelas}</td>
+                    <td>${formatarMoeda(pagamento.valor)}</td>
+                    <td>
+                        <button type="button" onclick="removerPagamento(${indice})">
+                            Remover
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        // Recalcula o resumo após incluir ou excluir um pagamento.
+        const resumo = calcularResumoPagamentos();
+
+        // Se os elementos de resumo existirem, atualiza o valor em cada um.
+        const campoTotalAplicado = document.getElementById("totalAplicado");
+        const campoTotalPago = document.getElementById("totalPago");
+        const campoSaldoRestante = document.getElementById("saldoRestante");
+        const campoModalidade = document.getElementById("modalidadeVenda");
+
+        // Exibe o preço correspondente à modalidade atual.
+        if (campoTotalAplicado) {
+            campoTotalAplicado.textContent = formatarMoeda(resumo.totalVenda);
+        }
+
+        // Exibe o valor total dos pagamentos adicionados.
+        if (campoTotalPago) {
+            campoTotalPago.textContent = formatarMoeda(resumo.totalPago);
+        }
+
+        // Exibe o saldo restante em reais.
+        if (campoSaldoRestante) {
+            campoSaldoRestante.textContent =
+                formatarMoeda(resumo.saldoCentavos / 100);
+        }
+
+        // Verifica se ainda não existem pagamentos adicionados.
+        if (pagamentosVenda.length === 0) {
+
+            // Sem pagamentos, a modalidade ainda não foi definida.
+            campoModalidade.textContent = "Não definida";
+
+        } else {
+
+            // Com pagamentos, identifica se a venda é à vista ou a prazo.
+            campoModalidade.textContent =
+                resumo.vendaVista ? "À vista" : "A prazo";
+        }
+    }
+
+    // Remove um pagamento da posição indicada pelo botão clicado.
+    function removerPagamento(indice) {
+        // Confirma que o índice pertence ao array.
+        if (!Number.isInteger(indice) ||
+            indice < 0 || indice >= pagamentosVenda.length) {
+            return;
+        }
+
+        // Apaga somente o pagamento selecionado.
+        pagamentosVenda.splice(indice, 1);
+
+        // Recria a lista e recalcula os totais dos pagamentos restantes.
+        atualizarTabelaPagamentos();
+    }
+
+
+    // =============================================================
+    // 9. FINALIZAÇÃO DA VENDA
+    // =============================================================
+
+    // Localiza o botão responsável por finalizar a venda.
+    const botaoFinalizarVenda = document.getElementById("finalizarVenda");
+
+    // Executa as validações quando o usuário clicar em Finalizar Venda.
+    botaoFinalizarVenda.addEventListener("click", function() {
+
+        // Localiza o ComboBox de clientes.
+        const campoCliente = document.getElementById("cliente");
+
+        // Recupera o código do cliente selecionado.
+        // Se nenhum cliente for selecionado, atribui null.
+        const idCliente = campoCliente.value === ""
+            ? null
+            : Number(campoCliente.value);
+
+        // Valida o código somente quando um cliente foi selecionado.
+        if (idCliente !== null &&
+            (!Number.isInteger(idCliente) || idCliente <= 0)) {
+
+            // Informa que o cliente selecionado é inválido.
+            alert("Cliente inválido.");
+
+            // Interrompe a finalização.
+            return;
+        }
+
+        // Verifica se existem produtos adicionados à venda.
+        if (itensVenda.length === 0) {
+
+            // Informa que a venda precisa ter pelo menos um produto.
+            alert("Adicione pelo menos um produto à venda.");
+
+            // Interrompe a finalização.
+            return;
+        }
+
+        // Verifica se existem pagamentos adicionados à venda.
+        if (pagamentosVenda.length === 0) {
+
+            // Informa que é obrigatório adicionar um pagamento.
+            alert("Adicione pelo menos uma forma de pagamento.");
+
+            // Interrompe a finalização.
+            return;
+        }
+
+        // Recalcula os totais da venda a partir dos produtos e pagamentos.
+        const resumo = calcularResumoPagamentos();
+
+        // Verifica se o valor pago ultrapassou o total da venda.
+        if (resumo.saldoCentavos < 0) {
+
+            // Impede finalizar uma venda com pagamento excedente.
+            alert("O valor pago ultrapassa o total da venda.");
+
+            // Interrompe a finalização.
+            return;
+        }
+
+        // Verifica se ainda existe algum valor pendente.
+        if (resumo.saldoCentavos > 0) {
+
+            // Informa o valor que ainda precisa ser pago.
+            alert(
+                "Ainda existe um saldo pendente de " +
+                formatarMoeda(resumo.saldoCentavos / 100)
             );
 
-            if (produtoExistente) {
-                alert("Este produto já foi adicionado à venda.");
-                return;
-            }
+            // Interrompe a finalização.
+            return;
+        }
 
-            const opcaoSelecionada = selecionarProduto.selectedOptions[0];
-            //Recupera a quantidade em estoque, caso não exista, define como 0 exemplo: selecione um produto.
-            const precoVista = opcaoSelecionada.dataset.precoVista;
-            const precoPrazo = opcaoSelecionada.dataset.precoPrazo;
+        // Monta o objeto contendo os dados da venda.
+        const dadosVenda = {
 
-            if (precoVista === "" || precoPrazo === "") {
-                alert("Produto sem preço cadastrado. Realize o cadastro de preços antes de adicionar à venda.");
-                return;
-            }
+            // Código do cliente selecionado.
+            idCliente: idCliente,
 
-            itensVenda.push({
-                idProduto: Number(codigoProduto),
-                quantidade: quantidadeSelecionada,
-                precoVista: Number(precoVista),
-                precoPrazo: Number(precoPrazo)
-            });
+            // Produtos adicionados à venda.
+            itens: itensVenda,
 
-            // Localiza o corpo da tabela.
-            const listaItensVenda = document.getElementById("listaItensVenda");
+            // Pagamentos adicionados à venda.
+            pagamentos: pagamentosVenda,
 
-            // Limpa as linhas anteriores.
-            listaItensVenda.innerHTML = "";
-           
-            atualizarTabelaItens();
+            // Modalidade de preço aplicada à venda.
+            modalidade: resumo.vendaVista ? "VISTA" : "PRAZO",
+
+            // Valor total calculado na tela.
+            valorTotal: resumo.totalVenda
+        };
+
+        // Apresenta os dados no console para conferência.
+        console.log("Dados da venda:", dadosVenda);
+
+        // Informa que todas as validações foram aprovadas.
+        // A gravação no banco será implementada na próxima etapa.
+        alert("Venda validada com sucesso. Pronta para envio ao servidor.");
+
+    });
+
+    // =============================================================
+    // ENVIO DA VENDA PARA O SERVIDOR NODE.JS
+    // =============================================================
+
+    // Recebe os dados da venda e envia para uma rota HTTP do servidor.
+    async function enviarVenda(dadosVenda) {
+
+        // Envia uma requisição HTTP POST para a rota de cadastro de vendas.
+        const resposta = await fetch("/vendas/finalizar", {
+
+            // Define que estamos enviando informações ao servidor.
+            method: "POST",
+
+            // Informa que o conteúdo enviado está no formato JSON.
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            // Converte o objeto da venda em JSON para o envio.
+            body: JSON.stringify(dadosVenda)
         });
 
-        // Função responsável por remover um produto.
-        function removerItem(codigoProduto) {
+        // Lê o conteúdo da resposta enviada pelo servidor.
+        const resultado = await resposta.json();
 
-            const findIndex = itensVenda.findIndex(item => item.idProduto === codigoProduto);
-            if (findIndex !== -1) {
-                itensVenda.splice(findIndex, 1);
+        // Verifica se o servidor retornou um erro HTTP.
+        if (!resposta.ok) {
 
-                atualizarTabelaItens();
-            }
-
+            // Interrompe a operação mostrando a mensagem do servidor.
+            throw new Error(
+                resultado.mensagem || "Não foi possível finalizar a venda."
+            );
         }
 
-        // Função responsável por atualizar a tabela de itens.
-        function atualizarTabelaItens() {
-            
-            const listaItensVenda = document.getElementById("listaItensVenda");
-            listaItensVenda.innerHTML = "";
-
-            itensVenda.forEach(function(item) {
-                listaItensVenda.innerHTML += `
-                    <tr>
-                        <td>${item.idProduto}</td>
-                        <td>${item.quantidade}</td>
-                        <td><button type="button" onclick="removerItem(${item.idProduto})">Remover</button></td>
-                    </tr>
-                `;
-            });
-        }
+        // Retorna os dados da venda confirmados pelo servidor.
+        return resultado;
+    }
 
 
-        function atualizarTabelaItens() {
 
-            const listaItensVenda = document.getElementById("listaItensVenda");
-            listaItensVenda.innerHTML = "";
-            
-            let totalGeralVista = 0;
-            let totalGeralPrazo = 0;
+    // =============================================================
+    // 8. INICIALIZAÇÃO DA TELA
+    // =============================================================
 
-            itensVenda.forEach(function(item) {
-                const totalVista = item.quantidade * item.precoVista;
-                const totalPrazo = item.quantidade * item.precoPrazo;
+    // Apresenta os totais iniciais dos produtos (R$ 0,00).
+    atualizarTabelaItens();
 
-                totalGeralVista += totalVista;
-                totalGeralPrazo += totalPrazo;
+    // Apresenta a tabela e o resumo inicial dos pagamentos.
+    atualizarTabelaPagamentos();
+</script>
 
-                listaItensVenda.innerHTML += `
-                    <tr>
-                        <td>${item.idProduto}</td>
-                        <td>${item.quantidade}</td>
-                        <td>${item.precoVista.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
-                        <td>${item.precoPrazo.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
-                        <td>${totalVista.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
-                        <td>${totalPrazo.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})}</td>
-                        <td><button type="button" onclick="removerItem(${item.idProduto})">Remover</button></td>
-                    </tr>
-                `;
-            });
-            // Atualiza os totais.
-            document.getElementById("totalGeralVista").textContent = formatarMoeda(totalGeralVista);
-            document.getElementById("totalGeralPrazo").textContent = formatarMoeda(totalGeralPrazo);
-        }
-
-        // Formata valores monetários no padrão brasileiro.
-        function formatarMoeda(valor) {
-            return valor.toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL"
-            });
-        }
-    </script>
 </body>
 </html>

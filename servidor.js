@@ -3614,6 +3614,31 @@ async function mostrarFormularioCadastroVenda(requisicao, resposta) {
             `;
         }
 
+        // Consulta as formas de pagamento ativas.
+        const resultadoPagamentos = await banco.query(
+            `SELECT
+                id_tipo_pagamento,
+                descricao,
+                categoria
+            FROM tipo_pagamento
+            WHERE ativo = TRUE
+            ORDER BY descricao`
+        );
+
+        // Acumula as opções de pagamento para o HTML.
+        let listaPagamentos = "";
+
+        // Percorre os tipos de pagamento encontrados.
+        for (const pagamento of resultadoPagamentos.rows) {
+
+            listaPagamentos += `
+                <option value="${escaparHtml(pagamento.id_tipo_pagamento)}"
+                        data-categoria="${escaparHtml(pagamento.categoria ?? "")}">
+                    ${escaparHtml(pagamento.descricao)}
+                </option>
+            `;
+        }
+
         // Carrega a página de cadastro de vendas.
         const caminhoHtml = path.join(__dirname, "venda-cadastro.html");
         const paginaHtml = await fs.readFile(caminhoHtml, "utf8");
@@ -3621,7 +3646,8 @@ async function mostrarFormularioCadastroVenda(requisicao, resposta) {
         // Preenche as opções de produtos, tamanhos e cores no formulário.
         const paginaPreenchida = paginaHtml
             .replace("<!-- OPCOES_CLIENTE_CADASTRO -->", () => opcoesClientes)
-            .replace("<!-- LISTA_PRODUTOS -->", () => listaProdutos);
+            .replace("<!-- LISTA_PRODUTOS -->", () => listaProdutos)
+            .replace("<!-- OPCOES_TIPO_PAGAMENTO -->", listaPagamentos);
 
         // Retorna HTTP 200 com o formulário preenchido.
         resposta.writeHead(200, {
